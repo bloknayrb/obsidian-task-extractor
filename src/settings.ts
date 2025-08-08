@@ -1,153 +1,21 @@
 /*
-Obsidian Plugin: Task Extractor for Emails & Meeting Notes
-Enhanced version with local LLM support and customizable frontmatter
+ * Settings UI and management
+ */
 
-Features:
-- Multi-provider LLM support: OpenAI, Anthropic, Ollama, LM Studio
-- Auto-detection of local LLM services
-- Customizable frontmatter templates for task creation
-- Advanced settings with real-time service monitoring
-- Robust error handling and fallback strategies
-*/
+import { App, PluginSettingTab, Setting } from 'obsidian';
+import { ExtractorSettings, LLMService } from './types';
+import { LLMProviderManager } from './llm-providers';
 
-import { App, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
-import { ExtractorSettings, DEFAULT_SETTINGS, FrontmatterField, LLMService } from './src/types';
-import { LLMProviderManager } from './src/llm-providers';
-import { TaskProcessor } from './src/task-processor';
-
-export default class TaskExtractorPlugin extends Plugin {
-  settings: ExtractorSettings;
-  processingFiles: Set<string> = new Set();
-  serviceCache: Map<string, LLMService> = new Map();
-  serviceCheckInterval: NodeJS.Timeout | null = null;
-  cloudModelCache: Map<string, string[]> = new Map();
-  apiKeyMissingNotified: Set<string> = new Set();
-  fileChangeDebouncer: Map<string, NodeJS.Timeout> = new Map();
-
-  private llmProvider: LLMProviderManager;
-  private taskProcessor: TaskProcessor;
-
-  async onload() {
-    console.log('Loading Task Extractor plugin...');
-    await this.loadSettings();
-
-    // Initialize modular components
-    this.llmProvider = new LLMProviderManager(this.settings);
-    this.taskProcessor = new TaskProcessor(this.app, this.settings, this.llmProvider);
-
-    // Sync the references for backward compatibility
-    this.serviceCache = this.llmProvider.getServiceCache();
-    this.cloudModelCache = this.llmProvider.getCloudModelCache();
-    this.apiKeyMissingNotified = this.llmProvider.getApiKeyMissingNotified();
-    this.processingFiles = this.taskProcessor.getProcessingFiles();
-
-    // Register settings tab
-    this.addSettingTab(new ExtractorSettingTab(this.app, this));
-
-    // Hook into metadata changes (file created/updated)
-    this.registerEvent(
-      this.app.vault.on('create', (file) => {
-        if (file instanceof TFile) {
-          this.debounceFileChange(file);
-        }
-      })
-    );
-
-    if (this.settings.processOnUpdate) {
-      this.registerEvent(
-        this.app.vault.on('modify', (file) => {
-          if (file instanceof TFile) {
-            this.debounceFileChange(file);
-          }
-        })
-      );
-    }
-
-    // Initialize service detection
-    await this.initializeServices();
-    
-    // Also scan existing unprocessed files once on load (non-blocking)
-    this.scanExistingFiles();
-  }
-
-  onunload() {
-    console.log('Unloading Task Extractor plugin...');
-    if (this.serviceCheckInterval) {
-      clearInterval(this.serviceCheckInterval);
-      this.serviceCheckInterval = null;
-    }
-    // Clear pending file change timeouts
-    this.fileChangeDebouncer.forEach(timeout => clearTimeout(timeout));
-    this.fileChangeDebouncer.clear();
-    // Clear caches
-    this.cloudModelCache.clear();
-    this.apiKeyMissingNotified.clear();
-  }
-
-  async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-  }
-
-  async saveSettings() {
-    await this.saveData(this.settings);
-  }
-
-  // Debounce file changes to prevent rapid processing
-  private debounceFileChange(file: TFile) {
-    const existing = this.fileChangeDebouncer.get(file.path);
-    if (existing) {
-      clearTimeout(existing);
-    }
-    
-    this.fileChangeDebouncer.set(file.path, setTimeout(() => {
-      this.onFileChanged(file);
-      this.fileChangeDebouncer.delete(file.path);
-    }, 2000));
-  }
-
-  // Delegate to task processor
-  async onFileChanged(file: TFile) {
-    return this.taskProcessor.onFileChanged(file);
-  }
-
-  async scanExistingFiles() {
-    return this.taskProcessor.scanExistingFiles();
-  }
-
-  // Service Detection and Management - delegate to LLM provider
-  async initializeServices() {
-    // No longer do upfront detection - use lazy loading
-  }
-
-  async detectServices(): Promise<Map<string, LLMService>> {
-    return this.llmProvider.detectServices();
-  }
-
-  getAvailableServices(): LLMService[] {
-    return this.llmProvider.getAvailableServices();
-  }
-
-  // LLM calls - delegate to provider
-  async callLLM(systemPrompt: string, userPrompt: string): Promise<string | null> {
-    return this.llmProvider.callLLM(systemPrompt, userPrompt);
-  }
-
-  async fetchCloudModels(provider: 'openai' | 'anthropic'): Promise<string[]> {
-    return this.llmProvider.fetchCloudModels(provider);
-  }
-
-  getDefaultModels(provider: string): string[] {
-    return this.llmProvider.getDefaultModels(provider);
-  }
-}
-
-class ExtractorSettingTab extends PluginSettingTab {
-  plugin: TaskExtractorPlugin;
+export class ExtractorSettingTab extends PluginSettingTab {
   private saveTimeout: NodeJS.Timeout | null = null;
 
-  constructor(app: App, plugin: TaskExtractorPlugin) {
+  constructor(
+    app: App,
+    private plugin: any, // Main plugin instance
+    private settings: ExtractorSettings,
+    private llmProvider: LLMProviderManager
+  ) {
     super(app, plugin);
-    this.plugin = plugin;
   }
 
   // Debounced save to reduce save frequency
@@ -208,37 +76,37 @@ class ExtractorSettingTab extends PluginSettingTab {
         .addOption('anthropic', 'Anthropic')
         .addOption('ollama', 'Ollama (Local)')
         .addOption('lmstudio', 'LM Studio (Local)')
-        .setValue(this.plugin.settings.provider)
+        .setValue(this.settings.provider)
         .onChange((v) => { 
-          this.plugin.settings.provider = v as any; 
+          this.settings.provider = v as any; 
           this.debouncedSave();
           
           // Clear API key notification when switching providers
-          this.plugin.apiKeyMissingNotified.clear();
+          this.llmProvider.getApiKeyMissingNotified().clear();
           
           this.updateServiceStatus(statusEl);
           this.display(); // Refresh to show/hide relevant settings
         }));
 
     // API Key (only for cloud providers)
-    if (['openai', 'anthropic'].includes(this.plugin.settings.provider)) {
+    if (['openai', 'anthropic'].includes(this.settings.provider)) {
       new Setting(containerEl)
         .setName('API Key')
         .setDesc('Your API key for the selected provider. Models will be loaded automatically once entered.')
         .addText(text => text
           .setPlaceholder('sk-... or claude-...')
-          .setValue(this.plugin.settings.apiKey)
+          .setValue(this.settings.apiKey)
           .onChange((v) => { 
-            this.plugin.settings.apiKey = v.trim(); 
+            this.settings.apiKey = v.trim(); 
             this.debouncedSave();
             
             // Clear model cache when API key changes
-            const oldCacheKeys = Array.from(this.plugin.cloudModelCache.keys())
-              .filter(key => key.startsWith(this.plugin.settings.provider));
-            oldCacheKeys.forEach(key => this.plugin.cloudModelCache.delete(key));
+            const oldCacheKeys = Array.from(this.llmProvider.getCloudModelCache().keys())
+              .filter(key => key.startsWith(this.settings.provider));
+            oldCacheKeys.forEach(key => this.llmProvider.getCloudModelCache().delete(key));
             
             // Clear notification flag
-            this.plugin.apiKeyMissingNotified.clear();
+            this.llmProvider.getApiKeyMissingNotified().clear();
             
             // Refresh model dropdown
             this.display();
@@ -251,8 +119,10 @@ class ExtractorSettingTab extends PluginSettingTab {
   
   private async addModelSetting(containerEl: HTMLElement): Promise<void> {
     const modelContainer = containerEl.createDiv();
-    const provider = this.plugin.settings.provider;
-    const service = this.plugin.serviceCache.get(provider);
+    const provider = this.settings.provider;
+    const service = this.llmProvider.getServiceCache().get(provider);
+    
+    // Create a container for the model setting that we can update
     
     if (['ollama', 'lmstudio'].includes(provider) && service?.available && service.models.length > 0) {
       // Show dropdown for available local models
@@ -261,17 +131,17 @@ class ExtractorSettingTab extends PluginSettingTab {
         .setDesc(`Select from ${service.models.length} available ${provider} models.`)
         .addDropdown(cb => {
           service.models.forEach(model => cb.addOption(model, model));
-          cb.setValue(this.plugin.settings.model || service.models[0])
-            .onChange((v) => { this.plugin.settings.model = v; this.debouncedSave(); });
+          cb.setValue(this.settings.model || service.models[0])
+            .onChange((v) => { this.settings.model = v; this.debouncedSave(); });
         });
-    } else if (['openai', 'anthropic'].includes(provider) && this.plugin.settings.apiKey) {
+    } else if (['openai', 'anthropic'].includes(provider) && this.settings.apiKey) {
       // Show loading state while fetching models
       const loadingSetting = new Setting(modelContainer)
         .setName('Model')
         .setDesc('Loading available models...');
       
       try {
-        const availableModels = await this.plugin.fetchCloudModels(provider as 'openai' | 'anthropic');
+        const availableModels = await this.llmProvider.fetchCloudModels(provider as 'openai' | 'anthropic');
         
         // Clear loading state and show actual dropdown
         modelContainer.empty();
@@ -281,10 +151,10 @@ class ExtractorSettingTab extends PluginSettingTab {
           .setDesc(`Select from ${availableModels.length} available ${provider} models.`)
           .addDropdown(cb => {
             availableModels.forEach(model => cb.addOption(model, model));
-            const currentModel = this.plugin.settings.model;
+            const currentModel = this.settings.model;
             const defaultModel = availableModels.includes(currentModel) ? currentModel : availableModels[0];
             cb.setValue(defaultModel)
-              .onChange((v) => { this.plugin.settings.model = v; this.debouncedSave(); });
+              .onChange((v) => { this.settings.model = v; this.debouncedSave(); });
           });
           
         // Add refresh button
@@ -294,7 +164,7 @@ class ExtractorSettingTab extends PluginSettingTab {
           .addButton(button => button
             .setButtonText('Refresh')
             .onClick(async () => {
-              this.plugin.cloudModelCache.clear();
+              this.llmProvider.getCloudModelCache().clear();
               this.display();
             }));
       } catch (error) {
@@ -324,34 +194,34 @@ class ExtractorSettingTab extends PluginSettingTab {
       .setDesc(description)
       .addText(text => text
         .setPlaceholder(defaultModels[provider as keyof typeof defaultModels] || '')
-        .setValue(this.plugin.settings.model)
-        .onChange((v) => { this.plugin.settings.model = v.trim(); this.debouncedSave(); }));
+        .setValue(this.settings.model)
+        .onChange((v) => { this.settings.model = v.trim(); this.debouncedSave(); }));
   }
   
   private addLocalLLMSection(containerEl: HTMLElement): void {
     containerEl.createEl('h3', { text: 'Local LLM Configuration' });
     
-    if (this.plugin.settings.provider === 'ollama') {
+    if (this.settings.provider === 'ollama') {
       new Setting(containerEl)
         .setName('Ollama URL')
         .setDesc('URL for your Ollama instance.')
         .addText(text => text
-          .setValue(this.plugin.settings.ollamaUrl)
+          .setValue(this.settings.ollamaUrl)
           .onChange((v) => { 
-            this.plugin.settings.ollamaUrl = v.trim(); 
+            this.settings.ollamaUrl = v.trim(); 
             this.debouncedSave();
             // Service will be re-detected on next use due to URL change
           }));
     }
     
-    if (this.plugin.settings.provider === 'lmstudio') {
+    if (this.settings.provider === 'lmstudio') {
       new Setting(containerEl)
         .setName('LM Studio URL')
         .setDesc('URL for your LM Studio instance.')
         .addText(text => text
-          .setValue(this.plugin.settings.lmstudioUrl)
+          .setValue(this.settings.lmstudioUrl)
           .onChange((v) => { 
-            this.plugin.settings.lmstudioUrl = v.trim(); 
+            this.settings.lmstudioUrl = v.trim(); 
             this.debouncedSave();
             // Service will be re-detected on next use due to URL change
           }));
@@ -362,10 +232,10 @@ class ExtractorSettingTab extends PluginSettingTab {
       .setDesc('How often to check for available models (minutes).')
       .addSlider(slider => slider
         .setLimits(1, 60, 1)
-        .setValue(this.plugin.settings.localModelRefreshInterval)
+        .setValue(this.settings.localModelRefreshInterval)
         .setDynamicTooltip()
         .onChange((v) => { 
-          this.plugin.settings.localModelRefreshInterval = v; 
+          this.settings.localModelRefreshInterval = v; 
           this.debouncedSave();
           // Note: Service monitoring now uses on-demand detection
         }));
@@ -379,23 +249,23 @@ class ExtractorSettingTab extends PluginSettingTab {
       .setDesc('Exact name the LLM should look for when deciding tasks.')
       .addText(text => text
         .setPlaceholder('Bryan Kolb')
-        .setValue(this.plugin.settings.ownerName)
-        .onChange((v) => { this.plugin.settings.ownerName = v.trim(); this.debouncedSave(); }));
+        .setValue(this.settings.ownerName)
+        .onChange((v) => { this.settings.ownerName = v.trim(); this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Tasks folder')
       .setDesc('Folder where generated task notes will be created.')
       .addText(text => text
-        .setValue(this.plugin.settings.tasksFolder)
-        .onChange((v) => { this.plugin.settings.tasksFolder = v.trim(); this.debouncedSave(); }));
+        .setValue(this.settings.tasksFolder)
+        .onChange((v) => { this.settings.tasksFolder = v.trim(); this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Trigger note types')
       .setDesc('Comma-separated list of note types to process (from frontmatter Type field).')
       .addText(text => text
-        .setValue(this.plugin.settings.triggerTypes.join(', '))
+        .setValue(this.settings.triggerTypes.join(', '))
         .onChange((v) => { 
-          this.plugin.settings.triggerTypes = v.split(',').map(s => s.trim()).filter(s => s.length > 0);
+          this.settings.triggerTypes = v.split(',').map(s => s.trim()).filter(s => s.length > 0);
           this.debouncedSave(); 
         }));
     
@@ -403,22 +273,22 @@ class ExtractorSettingTab extends PluginSettingTab {
       .setName('Process edits as well as new files')
       .setDesc('If enabled, modifications to matching notes will be processed too.')
       .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.processOnUpdate)
-        .onChange((v) => { this.plugin.settings.processOnUpdate = v; this.debouncedSave(); }));
+        .setValue(this.settings.processOnUpdate)
+        .onChange((v) => { this.settings.processOnUpdate = v; this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Link back to source')
       .setDesc('Insert a link back to the source note in generated task notes.')
       .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.linkBack)
-        .onChange((v) => { this.plugin.settings.linkBack = v; this.debouncedSave(); }));
+        .setValue(this.settings.linkBack)
+        .onChange((v) => { this.settings.linkBack = v; this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Processed marker key')
       .setDesc('Frontmatter key to mark processed notes.')
       .addText(text => text
-        .setValue(this.plugin.settings.processedFrontmatterKey)
-        .onChange((v) => { this.plugin.settings.processedFrontmatterKey = v.trim(); this.debouncedSave(); }));
+        .setValue(this.settings.processedFrontmatterKey)
+        .onChange((v) => { this.settings.processedFrontmatterKey = v.trim(); this.debouncedSave(); }));
   }
   
   private addFrontmatterSection(containerEl: HTMLElement): void {
@@ -431,7 +301,7 @@ class ExtractorSettingTab extends PluginSettingTab {
       .addButton(button => button
         .setButtonText('Add Field')
         .onClick(() => {
-          this.plugin.settings.frontmatterFields.push({
+          this.settings.frontmatterFields.push({
             key: 'new_field',
             defaultValue: '',
             type: 'text',
@@ -442,7 +312,7 @@ class ExtractorSettingTab extends PluginSettingTab {
         }));
     
     // Display existing fields
-    this.plugin.settings.frontmatterFields.forEach((field, index) => {
+    this.settings.frontmatterFields.forEach((field, index) => {
       const fieldContainer = containerEl.createDiv({ cls: 'task-extractor-field' });
       
       new Setting(fieldContainer)
@@ -451,7 +321,7 @@ class ExtractorSettingTab extends PluginSettingTab {
         .addButton(button => button
           .setButtonText('Remove')
           .onClick(() => {
-            this.plugin.settings.frontmatterFields.splice(index, 1);
+            this.settings.frontmatterFields.splice(index, 1);
             this.debouncedSave();
             this.display();
           }));
@@ -463,8 +333,8 @@ class ExtractorSettingTab extends PluginSettingTab {
       .setDesc('Override the default task extraction prompt. Leave empty to use default.')
       .addTextArea(text => text
         .setPlaceholder('Enter custom prompt...')
-        .setValue(this.plugin.settings.customPrompt)
-        .onChange((v) => { this.plugin.settings.customPrompt = v; this.debouncedSave(); }));
+        .setValue(this.settings.customPrompt)
+        .onChange((v) => { this.settings.customPrompt = v; this.debouncedSave(); }));
   }
   
   private addAdvancedSection(containerEl: HTMLElement): void {
@@ -475,43 +345,43 @@ class ExtractorSettingTab extends PluginSettingTab {
       .setDesc('Maximum tokens to generate.')
       .addSlider(slider => slider
         .setLimits(100, 2000, 50)
-        .setValue(this.plugin.settings.maxTokens)
+        .setValue(this.settings.maxTokens)
         .setDynamicTooltip()
-        .onChange((v) => { this.plugin.settings.maxTokens = v; this.debouncedSave(); }));
+        .onChange((v) => { this.settings.maxTokens = v; this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Temperature')
       .setDesc('Creativity level (0 = deterministic, 1 = creative).')
       .addSlider(slider => slider
         .setLimits(0, 1, 0.1)
-        .setValue(this.plugin.settings.temperature)
+        .setValue(this.settings.temperature)
         .setDynamicTooltip()
-        .onChange((v) => { this.plugin.settings.temperature = v; this.debouncedSave(); }));
+        .onChange((v) => { this.settings.temperature = v; this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Timeout (seconds)')
       .setDesc('Request timeout for LLM calls.')
       .addSlider(slider => slider
         .setLimits(10, 120, 5)
-        .setValue(this.plugin.settings.timeout)
+        .setValue(this.settings.timeout)
         .setDynamicTooltip()
-        .onChange((v) => { this.plugin.settings.timeout = v; this.debouncedSave(); }));
+        .onChange((v) => { this.settings.timeout = v; this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Retry Attempts')
       .setDesc('Number of retry attempts for failed requests.')
       .addSlider(slider => slider
         .setLimits(1, 5, 1)
-        .setValue(this.plugin.settings.retries)
+        .setValue(this.settings.retries)
         .setDynamicTooltip()
-        .onChange((v) => { this.plugin.settings.retries = v; this.debouncedSave(); }));
+        .onChange((v) => { this.settings.retries = v; this.debouncedSave(); }));
   }
   
   private updateServiceStatus(statusEl: HTMLElement): void {
     statusEl.empty();
     
-    const provider = this.plugin.settings.provider;
-    const service = this.plugin.serviceCache.get(provider);
+    const provider = this.settings.provider;
+    const service = this.llmProvider.getServiceCache().get(provider);
     
     if (['ollama', 'lmstudio'].includes(provider)) {
       if (service?.available) {
@@ -526,7 +396,7 @@ class ExtractorSettingTab extends PluginSettingTab {
         });
       }
     } else {
-      if (this.plugin.settings.apiKey) {
+      if (this.settings.apiKey) {
         statusEl.createEl('div', { 
           text: `✅ ${provider} API key configured`,
           cls: 'task-extractor-status-success'
