@@ -83,20 +83,50 @@ export class TaskProcessor {
 
   // scan vault once on load for unprocessed matching notes
   async scanExistingFiles() {
+    const files = this.getUnprocessedFiles();
+    const batches = this.chunkArray(files, 5);
+    
+    for (const batch of batches) {
+      await Promise.all(batch.map(f => this.onFileChanged(f)));
+      await this.delay(100); // Prevent UI blocking
+    }
+  }
+
+  // Get list of unprocessed files that match trigger criteria
+  private getUnprocessedFiles(): TFile[] {
     const files = this.app.vault.getMarkdownFiles();
+    const unprocessedFiles: TFile[] = [];
+    
     for (const f of files) {
       const cache = this.app.metadataCache.getFileCache(f);
       const front = cache?.frontmatter;
       if (!front) continue;
+      
       const typeRaw = this.getFrontmatterValue(front, 'Type') || '';
       const type = ('' + typeRaw).toLowerCase();
       const accepted = this.settings.triggerTypes.map(t => t.toLowerCase());
       const processedValue = this.getFrontmatterValue(front, this.settings.processedFrontmatterKey);
+      
       if (accepted.includes(type) && !(processedValue === true || processedValue === 'true')) {
-        // lightweight throttle
-        await this.onFileChanged(f);
+        unprocessedFiles.push(f);
       }
     }
+    
+    return unprocessedFiles;
+  }
+
+  // Utility function to chunk array into smaller batches
+  private chunkArray<T>(array: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  }
+
+  // Utility function for delays
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   private getFrontmatterValue(front: any, key: string) {
