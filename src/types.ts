@@ -47,6 +47,25 @@ export interface ExtractorSettings {
   retries: number;
 }
 
+export interface ExtractedTask {
+  task_title: string;
+  task_details: string;
+  due_date?: string | null;
+  priority?: 'high' | 'medium' | 'low';
+  project?: string | null;
+  client?: string | null;
+  source_excerpt?: string;
+  confidence?: 'high' | 'medium' | 'low';
+  [key: string]: any; // Allow additional extracted fields
+}
+
+export interface TaskExtractionResult {
+  found: boolean;
+  tasks: ExtractedTask[];
+  confidence?: 'high' | 'medium' | 'low';
+}
+
+// Backward compatibility type alias
 export interface TaskExtraction {
   found: boolean;
   task_title?: string;
@@ -59,12 +78,12 @@ export interface TaskExtraction {
 
 export const DEFAULT_FRONTMATTER_FIELDS: FrontmatterField[] = [
   { key: 'task', defaultValue: '', type: 'text', required: true },
-  { key: 'status', defaultValue: 'todo', type: 'select', options: ['todo', 'doing', 'done', 'cancelled'], required: true },
+  { key: 'status', defaultValue: 'inbox', type: 'select', options: ['inbox', 'next', 'waiting', 'someday', 'done', 'cancelled'], required: true },
   { key: 'priority', defaultValue: 'medium', type: 'select', options: ['low', 'medium', 'high', 'urgent'], required: true },
   { key: 'due', defaultValue: '', type: 'date', required: false },
   { key: 'project', defaultValue: '', type: 'text', required: false },
   { key: 'client', defaultValue: '', type: 'text', required: false },
-  { key: 'created', defaultValue: '{{date}}', type: 'date', required: false },
+  { key: 'created', defaultValue: '{{date}}', type: 'date', required: true },
   { key: 'tags', defaultValue: 'task', type: 'text', required: false }
 ];
 

@@ -3,12 +3,19 @@
  */
 
 import { App, TFile, Notice } from 'obsidian';
-import { ExtractorSettings, TaskExtraction } from './types';
+import { ExtractorSettings, TaskExtraction, TaskExtractionResult, ExtractedTask } from './types';
 import { LLMProviderManager } from './llm-providers';
+
+interface ProcessingStatus {
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  startTime: number;
+  timeout?: NodeJS.Timeout;
+}
 
 export class TaskProcessor {
   private processingFiles: Set<string> = new Set();
   private fileChangeDebouncer: Map<string, NodeJS.Timeout> = new Map();
+  private processingQueue: Map<string, ProcessingStatus> = new Map();
 
   constructor(
     private app: App,
@@ -31,15 +38,37 @@ export class TaskProcessor {
 
   // When a file is created or modified
   async onFileChanged(file: TFile) {
+    // Atomic file processing with guaranteed cleanup and queue management
+    if (file.extension !== 'md') return;
+    
+    // Check if already in processing queue or set
+    const queueStatus = this.processingQueue.get(file.path);
+    if (queueStatus?.status === 'processing' || this.processingFiles.has(file.path)) {
+      return;
+    }
+    
+    // Add to queue with status tracking
+    const processingStatus: ProcessingStatus = {
+      status: 'queued',
+      startTime: Date.now()
+    };
+    
+    // Add processing timeout mechanism
+    processingStatus.timeout = setTimeout(() => {
+      console.warn(`TaskExtractor: File processing timeout for ${file.path}`);
+      this.cleanupFileProcessing(file.path);
+    }, 30000); // 30 second timeout
+    
+    this.processingQueue.set(file.path, processingStatus);
+    this.processingFiles.add(file.path);
+    
+    // Update status to processing
+    processingStatus.status = 'processing';
+    
     try {
-      if (file.extension !== 'md') return;
-      if (this.processingFiles.has(file.path)) return;
-      this.processingFiles.add(file.path);
-
       const cache = this.app.metadataCache.getFileCache(file);
       const front = cache?.frontmatter;
       if (!front) {
-        this.processingFiles.delete(file.path);
         return;
       }
 
@@ -47,7 +76,6 @@ export class TaskProcessor {
       const processedValue = this.getFrontmatterValue(front, this.settings.processedFrontmatterKey);
       if (processedValue === true || processedValue === 'true') {
         // already processed
-        this.processingFiles.delete(file.path);
         return;
       }
 
@@ -55,7 +83,6 @@ export class TaskProcessor {
       const type = ('' + typeRaw).toLowerCase();
       const accepted = this.settings.triggerTypes.map(t => t.toLowerCase());
       if (!accepted.includes(type)) {
-        this.processingFiles.delete(file.path);
         return;
       }
 
@@ -66,19 +93,40 @@ export class TaskProcessor {
       const extraction = await this.extractTaskFromContent(content, file.path);
 
       if (extraction && extraction.found) {
-        // create task note
-        await this.createTaskNote(extraction, file);
+        // Handle both single task and multi-task results
+        await this.handleTaskExtraction(extraction, file);
       }
 
       // mark as processed if configured
       await this.markFileProcessed(file);
+      
+      // Mark as completed
+      if (this.processingQueue.has(file.path)) {
+        this.processingQueue.get(file.path)!.status = 'completed';
+      }
 
-      this.processingFiles.delete(file.path);
     } catch (err) {
       console.error('TaskExtractor error', err);
       new Notice('Task Extractor: error processing file — see console');
-      try { this.processingFiles.delete(file.path); } catch {}
+      
+      // Mark as failed
+      if (this.processingQueue.has(file.path)) {
+        this.processingQueue.get(file.path)!.status = 'failed';
+      }
+    } finally {
+      // Guaranteed cleanup - always executes regardless of errors or early returns
+      this.cleanupFileProcessing(file.path);
     }
+  }
+
+  // Centralized cleanup method for atomic processing
+  private cleanupFileProcessing(filePath: string) {
+    const status = this.processingQueue.get(filePath);
+    if (status?.timeout) {
+      clearTimeout(status.timeout);
+    }
+    this.processingQueue.delete(filePath);
+    this.processingFiles.delete(filePath);
   }
 
   // scan vault once on load for unprocessed matching notes
@@ -201,17 +249,36 @@ export class TaskProcessor {
     }
   }
 
-  // Compose prompt, call LLM, and parse response
-  private async extractTaskFromContent(content: string, sourcePath: string): Promise<TaskExtraction> {
-    // Use custom prompt if provided, otherwise use default
+  // Shared method for constructing prompts
+  private buildExtractionPrompt(sourcePath: string, content: string): { system: string, user: string } {
+    // Use custom prompt if provided, otherwise use enhanced default
     const basePrompt = this.settings.customPrompt || 
-      `You are a task extraction assistant. You will be given the full text of an email or meeting note. Determine if there is an explicit or implied actionable task for ${this.settings.ownerName} (exact name). If there is a task, output a single JSON object and nothing else. If there is no task, output {"found": false}.`;
+      `You are a task extraction specialist. Extract actionable tasks from emails and meeting notes following these strict rules:
+
+EXTRACTION RULES:
+- Extract ONLY concrete, actionable tasks explicitly stated or clearly implied
+- Use null for uncertain/missing information - DO NOT GUESS
+- Extract tasks only for the specified person: ${this.settings.ownerName} (exact name)
+- If no clear tasks exist, return {"found": false, "tasks": []}
+
+PRIORITY GUIDELINES:
+- high: explicit urgency/deadline mentioned
+- medium: standard requests without time pressure  
+- low: optional/background items
+
+VALIDATION CONSTRAINTS:
+- task_title: 6-100 characters, actionable phrasing
+- task_details: max 300 characters, concrete description
+- due_date: YYYY-MM-DD format only if explicitly mentioned
+- source_excerpt: exact quote (max 150 chars) justifying extraction
+
+Return valid JSON only. Be conservative - accuracy over completeness.`;
     
     // Generate field descriptions from frontmatter settings
     const fieldDescriptions = this.settings.frontmatterFields
       .filter(f => f.required || f.key === 'task_title' || f.key === 'task_details')
       .map(f => {
-        if (f.key === 'task' || f.key === 'task_title') return '- task_title: short (6-12 words) actionable title';
+        if (f.key === 'task' || f.key === 'task_title') return '- task_title: short (6-100 words) actionable title';
         if (f.key === 'task_details') return '- task_details: 1-3 sentences describing what to do and any context';
         if (f.key === 'due') return '- due_date: ISO date YYYY-MM-DD if explicitly present in the text, otherwise null';
         if (f.key === 'priority') return `- priority: ${f.options?.join('|') || 'high|medium|low'} (choose best match)`;
@@ -220,15 +287,126 @@ export class TaskProcessor {
         return `- ${f.key}: ${f.defaultValue || 'appropriate value based on context'}`;
       });
     
-    const system = `${basePrompt} The JSON, when found, must include these keys:\n${fieldDescriptions.join('\n')}\n- source_excerpt: a short quoted excerpt from the note that justifies the decision (max 3 lines)\nReturn valid JSON only.`;
+    const system = `${basePrompt}
+
+When tasks are found, return JSON in this format:
+{
+  "found": true,
+  "tasks": [
+    {
+      ${fieldDescriptions.join(',\n      ')},
+      "source_excerpt": "exact quote from source (max 150 chars)",
+      "confidence": "high|medium|low"
+    }
+  ],
+  "confidence": "high|medium|low"
+}
+
+When no tasks found, return: {"found": false, "tasks": []}`;
 
     const user = `SOURCE_PATH: ${sourcePath}\n---BEGIN NOTE---\n${content}\n---END NOTE---`;
+
+    return { system, user };
+  }
+
+  // New method for multi-task extraction
+  async extractMultipleTasksFromContent(content: string, sourcePath: string): Promise<TaskExtractionResult> {
+    const { system, user } = this.buildExtractionPrompt(sourcePath, content);
+
+    try {
+      const raw = await this.llmProvider.callLLM(system, user);
+      const parsed = this.safeParseJSON(raw);
+      
+      if (!parsed) return { found: false, tasks: [] };
+      
+      // If it's already in the new format, return it
+      if ('tasks' in parsed && Array.isArray(parsed.tasks)) {
+        return parsed as TaskExtractionResult;
+      }
+      
+      // Convert legacy format to new format
+      if ('found' in parsed && parsed.found) {
+        return {
+          found: true,
+          tasks: [{
+            task_title: parsed.task_title || 'Unspecified task',
+            task_details: parsed.task_details || '',
+            due_date: parsed.due_date || null,
+            priority: parsed.priority || 'medium',
+            project: parsed.project || null,
+            client: parsed.client || null,
+            source_excerpt: parsed.source_excerpt || '',
+            confidence: parsed.confidence || 'medium'
+          }]
+        };
+      }
+      
+      return { found: false, tasks: [] };
+    } catch (e) {
+      console.error('extractMultipleTasksFromContent error', e);
+      return { found: false, tasks: [] };
+    }
+  }
+
+  // Handle task extraction results (both single and multi-task)
+  private async handleTaskExtraction(extraction: TaskExtraction | TaskExtractionResult, sourceFile: TFile) {
+    try {
+      // Check if it's the new multi-task format
+      if ('tasks' in extraction && Array.isArray(extraction.tasks)) {
+        let createdCount = 0;
+        for (const task of extraction.tasks) {
+          try {
+            await this.createTaskNote(task, sourceFile);
+            createdCount++;
+          } catch (error) {
+            console.error(`Failed to create task note for: ${task.task_title}`, error);
+          }
+        }
+        
+        if (createdCount > 0) {
+          new Notice(`Task Extractor: created ${createdCount} task note${createdCount !== 1 ? 's' : ''}`);
+        }
+      } else {
+        // Handle legacy single-task format
+        await this.createTaskNote(extraction as TaskExtraction, sourceFile);
+        new Notice(`Task Extractor: created task "${extraction.task_title}"`);
+      }
+    } catch (error) {
+      console.error('Error handling task extraction:', error);
+      new Notice('Task Extractor: error creating task notes — see console');
+    }
+  }
+
+  // Compose prompt, call LLM, and parse response (legacy method for backward compatibility)
+  private async extractTaskFromContent(content: string, sourcePath: string): Promise<TaskExtraction> {
+    const { system, user } = this.buildExtractionPrompt(sourcePath, content);
 
     try {
       const raw = await this.llmProvider.callLLM(system, user);
       const parsed = this.safeParseJSON(raw);
       if (!parsed) return { found: false };
-      // normalize
+      
+      // Handle new multi-task format
+      if (parsed.tasks && Array.isArray(parsed.tasks)) {
+        // Return first task for backward compatibility
+        if (parsed.tasks.length > 0) {
+          const firstTask = parsed.tasks[0];
+          return {
+            found: true,
+            task_title: firstTask.task_title || 'Unspecified task',
+            task_details: firstTask.task_details || '',
+            due_date: firstTask.due_date || null,
+            priority: firstTask.priority || 'medium',
+            source_excerpt: firstTask.source_excerpt || '',
+            confidence: firstTask.confidence,
+            ...firstTask // Include any additional extracted fields
+          };
+        } else {
+          return { found: false };
+        }
+      }
+      
+      // Handle legacy single-task format
       if (!parsed.found) return { found: false };
       return {
         found: true,
@@ -245,25 +423,117 @@ export class TaskProcessor {
     }
   }
 
-  private safeParseJSON(text: string | null) {
+  private safeParseJSON(text: string | null): TaskExtractionResult | TaskExtraction | null {
     if (!text) return null;
+    
+    let parsed: any = null;
+    
     // try direct parse
     try {
-      return JSON.parse(text);
-    } catch {}
-    // extract first {...}
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) {
-      try { return JSON.parse(m[0]); } catch {}
+      parsed = JSON.parse(text);
+    } catch {
+      // extract first {...}
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) {
+        try { 
+          parsed = JSON.parse(m[0]); 
+        } catch {
+          // try to fix common issues: single quotes -> double
+          const fixed = m[0].replace(/'/g, '"');
+          try { 
+            parsed = JSON.parse(fixed); 
+          } catch {
+            return null;
+          }
+        }
+      } else {
+        return null;
+      }
     }
-    // try to fix common issues: single quotes -> double
-    const fixed = text.replace(/'/g, '"');
-    try { return JSON.parse(fixed); } catch {}
+    
+    if (!parsed || typeof parsed !== 'object') return null;
+    
+    // Validate and normalize the parsed result
+    return this.validateAndNormalizeParsedResult(parsed);
+  }
+  
+  private validateAndNormalizeParsedResult(data: any): TaskExtractionResult | TaskExtraction | null {
+    if (typeof data !== 'object' || data === null) return null;
+    
+    // Check for new multi-task format
+    if (data.hasOwnProperty('tasks') && Array.isArray(data.tasks)) {
+      const validTasks: ExtractedTask[] = [];
+      
+      for (const task of data.tasks) {
+        if (this.isValidTask(task)) {
+          validTasks.push({
+            task_title: task.task_title || 'Unspecified task',
+            task_details: task.task_details || '',
+            due_date: task.due_date || null,
+            priority: task.priority || 'medium',
+            project: task.project || null,
+            client: task.client || null,
+            source_excerpt: task.source_excerpt || '',
+            confidence: task.confidence || 'medium',
+            ...task
+          });
+        }
+      }
+      
+      return {
+        found: data.found === true && validTasks.length > 0,
+        tasks: validTasks,
+        confidence: data.confidence || 'medium'
+      };
+    }
+    
+    // Handle legacy single-task format
+    if (data.hasOwnProperty('found')) {
+      return {
+        found: data.found === true,
+        task_title: data.task_title || data.title || '',
+        task_details: data.task_details || data.details || '',
+        due_date: data.due_date || null,
+        priority: data.priority || 'medium',
+        source_excerpt: data.source_excerpt || '',
+        ...data
+      };
+    }
+    
     return null;
+  }
+  
+  private isValidTask(task: any): boolean {
+    if (typeof task !== 'object' || !task) return false;
+    
+    // Must have a task title
+    if (!task.task_title || typeof task.task_title !== 'string' || task.task_title.trim().length === 0) {
+      return false;
+    }
+    
+    // Validate confidence if present
+    if (task.confidence && !['high', 'medium', 'low'].includes(task.confidence)) {
+      return false;
+    }
+    
+    // Validate priority if present
+    if (task.priority && !['high', 'medium', 'low'].includes(task.priority)) {
+      return false;
+    }
+    
+    // Validate due_date format if present
+    if (task.due_date && typeof task.due_date === 'string') {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(task.due_date)) {
+        return false;
+      }
+    }
+    
+    return true;
   }
 
   // Create TaskNotes–compatible note in tasksFolder
-  private async createTaskNote(extraction: TaskExtraction, sourceFile: TFile) {
+  private async createTaskNote(extraction: TaskExtraction | ExtractedTask, sourceFile: TFile) {
     const safeTitle = this.makeFilenameSafe(extraction.task_title || 'task');
     let filename = `${safeTitle}.md`;
     let folder = this.settings.tasksFolder.trim() || 'Tasks';
@@ -334,10 +604,21 @@ export class TaskProcessor {
     return title.replace(/[\\/:*?"<>|#%{}\\^~\[\]`;'@&=+]/g, '').replace(/\s+/g, '-').slice(0, 120);
   }
 
-  // Cleanup method
+  // Enhanced cleanup method with processing queue management
   cleanup() {
+    // Clear debounce timers
     this.fileChangeDebouncer.forEach(timeout => clearTimeout(timeout));
     this.fileChangeDebouncer.clear();
+    
+    // Clear processing queue timers
+    this.processingQueue.forEach(status => {
+      if (status.timeout) {
+        clearTimeout(status.timeout);
+      }
+    });
+    this.processingQueue.clear();
+    
+    // Clear processing files set
     this.processingFiles.clear();
   }
 
