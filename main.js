@@ -70,8 +70,10 @@ var TaskExtractorPlugin = class extends import_obsidian.Plugin {
     this.serviceCheckInterval = null;
     this.cloudModelCache = /* @__PURE__ */ new Map();
     this.apiKeyMissingNotified = /* @__PURE__ */ new Set();
+    // Track which providers we've already notified about
+    this.fileChangeDebouncer = /* @__PURE__ */ new Map();
   }
-  // Track which providers we've already notified about
+  // Debounce file changes
   async onload() {
     console.log("Loading Task Extractor plugin...");
     await this.loadSettings();
@@ -79,7 +81,7 @@ var TaskExtractorPlugin = class extends import_obsidian.Plugin {
     this.registerEvent(
       this.app.vault.on("create", (file) => {
         if (file instanceof import_obsidian.TFile) {
-          this.onFileChanged(file);
+          this.debounceFileChange(file);
         }
       })
     );
@@ -87,13 +89,12 @@ var TaskExtractorPlugin = class extends import_obsidian.Plugin {
       this.registerEvent(
         this.app.vault.on("modify", (file) => {
           if (file instanceof import_obsidian.TFile) {
-            this.onFileChanged(file);
+            this.debounceFileChange(file);
           }
         })
       );
     }
     await this.initializeServices();
-    this.setupServiceMonitoring();
     this.scanExistingFiles();
   }
   onunload() {
@@ -102,6 +103,8 @@ var TaskExtractorPlugin = class extends import_obsidian.Plugin {
       clearInterval(this.serviceCheckInterval);
       this.serviceCheckInterval = null;
     }
+    this.fileChangeDebouncer.forEach((timeout) => clearTimeout(timeout));
+    this.fileChangeDebouncer.clear();
     this.cloudModelCache.clear();
     this.apiKeyMissingNotified.clear();
   }
@@ -110,6 +113,17 @@ var TaskExtractorPlugin = class extends import_obsidian.Plugin {
   }
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+  // Debounce file changes to prevent rapid processing
+  debounceFileChange(file) {
+    const existing = this.fileChangeDebouncer.get(file.path);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    this.fileChangeDebouncer.set(file.path, setTimeout(() => {
+      this.onFileChanged(file);
+      this.fileChangeDebouncer.delete(file.path);
+    }, 2e3));
   }
   // When a file is created or modified
   async onFileChanged(file) {
@@ -217,63 +231,74 @@ ${processedKey}: true
   }
   // Service Detection and Management
   async initializeServices() {
-    await this.detectServices();
   }
-  setupServiceMonitoring() {
-    if (this.serviceCheckInterval) {
-      clearInterval(this.serviceCheckInterval);
-    }
-    const intervalMs = this.settings.localModelRefreshInterval * 60 * 1e3;
-    this.serviceCheckInterval = setInterval(async () => {
-      await this.detectServices();
-    }, intervalMs);
-  }
-  async detectServices() {
-    var _a, _b;
-    const services = /* @__PURE__ */ new Map();
+  // Get service with 30-minute cache TTL
+  async getService(provider) {
+    const cached = this.serviceCache.get(provider);
     const now = Date.now();
-    const ollamaService = {
-      name: "ollama",
-      url: this.settings.ollamaUrl,
-      available: false,
-      models: [],
-      lastChecked: now
-    };
-    try {
-      const ollamaResponse = await fetch(`${this.settings.ollamaUrl}/api/tags`, {
-        signal: this.createTimeoutSignal(5e3)
-      });
-      if (ollamaResponse.ok) {
-        const data = await ollamaResponse.json();
-        ollamaService.available = true;
-        ollamaService.models = ((_a = data.models) == null ? void 0 : _a.map((m) => m.name)) || [];
-      }
-    } catch (error) {
-      console.log("Ollama not available:", error.message);
+    const cacheValidMs = 30 * 60 * 1e3;
+    if (cached && now - cached.lastChecked < cacheValidMs) {
+      return cached;
     }
-    services.set("ollama", ollamaService);
-    const lmstudioService = {
-      name: "lmstudio",
-      url: this.settings.lmstudioUrl,
-      available: false,
-      models: [],
-      lastChecked: now
-    };
-    try {
-      const lmstudioResponse = await fetch(`${this.settings.lmstudioUrl}/v1/models`, {
-        signal: this.createTimeoutSignal(5e3)
-      });
-      if (lmstudioResponse.ok) {
-        const data = await lmstudioResponse.json();
-        lmstudioService.available = true;
-        lmstudioService.models = ((_b = data.data) == null ? void 0 : _b.map((m) => m.id)) || [];
+    return await this.detectSingleService(provider);
+  }
+  // Detect a single service instead of all services
+  async detectSingleService(provider) {
+    var _a, _b;
+    const now = Date.now();
+    if (provider === "ollama") {
+      const service = {
+        name: "ollama",
+        url: this.settings.ollamaUrl,
+        available: false,
+        models: [],
+        lastChecked: now
+      };
+      try {
+        const response = await fetch(`${this.settings.ollamaUrl}/api/tags`, {
+          signal: this.createTimeoutSignal(5e3)
+        });
+        if (response.ok) {
+          const data = await response.json();
+          service.available = true;
+          service.models = ((_a = data.models) == null ? void 0 : _a.map((m) => m.name)) || [];
+        }
+      } catch (error) {
+        console.log("Ollama not available:", error.message);
       }
-    } catch (error) {
-      console.log("LM Studio not available:", error.message);
+      this.serviceCache.set("ollama", service);
+      return service;
     }
-    services.set("lmstudio", lmstudioService);
-    this.serviceCache = services;
-    return services;
+    if (provider === "lmstudio") {
+      const service = {
+        name: "lmstudio",
+        url: this.settings.lmstudioUrl,
+        available: false,
+        models: [],
+        lastChecked: now
+      };
+      try {
+        const response = await fetch(`${this.settings.lmstudioUrl}/v1/models`, {
+          signal: this.createTimeoutSignal(5e3)
+        });
+        if (response.ok) {
+          const data = await response.json();
+          service.available = true;
+          service.models = ((_b = data.data) == null ? void 0 : _b.map((m) => m.id)) || [];
+        }
+      } catch (error) {
+        console.log("LM Studio not available:", error.message);
+      }
+      this.serviceCache.set("lmstudio", service);
+      return service;
+    }
+    return null;
+  }
+  // Legacy method for backward compatibility - now uses on-demand detection
+  async detectServices() {
+    await this.getService("ollama");
+    await this.getService("lmstudio");
+    return this.serviceCache;
   }
   getAvailableServices() {
     return Array.from(this.serviceCache.values()).filter((s) => s.available);
@@ -606,7 +631,7 @@ ${content}
   }
   async callOllama(systemPrompt, userPrompt) {
     var _a;
-    const service = this.serviceCache.get("ollama");
+    const service = await this.getService("ollama");
     if (!(service == null ? void 0 : service.available) || !service.models.length) {
       throw new Error("Ollama service not available or no models loaded");
     }
@@ -646,7 +671,7 @@ ${content}
   }
   async callLMStudio(systemPrompt, userPrompt) {
     var _a, _b, _c;
-    const service = this.serviceCache.get("lmstudio");
+    const service = await this.getService("lmstudio");
     if (!(service == null ? void 0 : service.available) || !service.models.length) {
       throw new Error("LM Studio service not available or no models loaded");
     }
@@ -687,7 +712,26 @@ ${content}
 var ExtractorSettingTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
+    this.saveTimeout = null;
     this.plugin = plugin;
+  }
+  // Debounced save to reduce save frequency
+  debouncedSave() {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+    this.saveTimeout = setTimeout(async () => {
+      await this.plugin.saveSettings();
+      this.saveTimeout = null;
+    }, 500);
+  }
+  // Clean up timeout on hide
+  hide() {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+      this.saveTimeout = null;
+    }
+    super.hide();
   }
   display() {
     const { containerEl } = this;
@@ -703,17 +747,17 @@ var ExtractorSettingTab = class extends import_obsidian.PluginSettingTab {
     containerEl.createEl("h3", { text: "LLM Provider Configuration" });
     const statusEl = containerEl.createEl("div", { cls: "task-extractor-status" });
     this.updateServiceStatus(statusEl);
-    new import_obsidian.Setting(containerEl).setName("Provider").setDesc("Choose LLM provider. Local providers (Ollama/LM Studio) require the service to be running.").addDropdown((cb) => cb.addOption("openai", "OpenAI").addOption("anthropic", "Anthropic").addOption("ollama", "Ollama (Local)").addOption("lmstudio", "LM Studio (Local)").setValue(this.plugin.settings.provider).onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Provider").setDesc("Choose LLM provider. Local providers (Ollama/LM Studio) require the service to be running.").addDropdown((cb) => cb.addOption("openai", "OpenAI").addOption("anthropic", "Anthropic").addOption("ollama", "Ollama (Local)").addOption("lmstudio", "LM Studio (Local)").setValue(this.plugin.settings.provider).onChange((v) => {
       this.plugin.settings.provider = v;
-      await this.plugin.saveSettings();
+      this.debouncedSave();
       this.plugin.apiKeyMissingNotified.clear();
       this.updateServiceStatus(statusEl);
       this.display();
     }));
     if (["openai", "anthropic"].includes(this.plugin.settings.provider)) {
-      new import_obsidian.Setting(containerEl).setName("API Key").setDesc("Your API key for the selected provider. Models will be loaded automatically once entered.").addText((text) => text.setPlaceholder("sk-... or claude-...").setValue(this.plugin.settings.apiKey).onChange(async (v) => {
+      new import_obsidian.Setting(containerEl).setName("API Key").setDesc("Your API key for the selected provider. Models will be loaded automatically once entered.").addText((text) => text.setPlaceholder("sk-... or claude-...").setValue(this.plugin.settings.apiKey).onChange((v) => {
         this.plugin.settings.apiKey = v.trim();
-        await this.plugin.saveSettings();
+        this.debouncedSave();
         const oldCacheKeys = Array.from(this.plugin.cloudModelCache.keys()).filter((key) => key.startsWith(this.plugin.settings.provider));
         oldCacheKeys.forEach((key) => this.plugin.cloudModelCache.delete(key));
         this.plugin.apiKeyMissingNotified.clear();
@@ -729,9 +773,9 @@ var ExtractorSettingTab = class extends import_obsidian.PluginSettingTab {
     if (["ollama", "lmstudio"].includes(provider) && (service == null ? void 0 : service.available) && service.models.length > 0) {
       new import_obsidian.Setting(modelContainer).setName("Model").setDesc(`Select from ${service.models.length} available ${provider} models.`).addDropdown((cb) => {
         service.models.forEach((model) => cb.addOption(model, model));
-        cb.setValue(this.plugin.settings.model || service.models[0]).onChange(async (v) => {
+        cb.setValue(this.plugin.settings.model || service.models[0]).onChange((v) => {
           this.plugin.settings.model = v;
-          await this.plugin.saveSettings();
+          this.debouncedSave();
         });
       });
     } else if (["openai", "anthropic"].includes(provider) && this.plugin.settings.apiKey) {
@@ -743,9 +787,9 @@ var ExtractorSettingTab = class extends import_obsidian.PluginSettingTab {
           availableModels.forEach((model) => cb.addOption(model, model));
           const currentModel = this.plugin.settings.model;
           const defaultModel = availableModels.includes(currentModel) ? currentModel : availableModels[0];
-          cb.setValue(defaultModel).onChange(async (v) => {
+          cb.setValue(defaultModel).onChange((v) => {
             this.plugin.settings.model = v;
-            await this.plugin.saveSettings();
+            this.debouncedSave();
           });
         });
         new import_obsidian.Setting(modelContainer).setName("Refresh Models").setDesc("Reload the list of available models from the API.").addButton((btn) => btn.setButtonText("Refresh").onClick(async () => {
@@ -769,9 +813,9 @@ var ExtractorSettingTab = class extends import_obsidian.PluginSettingTab {
       ollama: "llama3.2",
       lmstudio: "local-model"
     };
-    new import_obsidian.Setting(container).setName("Model").setDesc(description).addText((text) => text.setPlaceholder(defaultModels[provider] || "").setValue(this.plugin.settings.model).onChange(async (v) => {
+    new import_obsidian.Setting(container).setName("Model").setDesc(description).addText((text) => text.setPlaceholder(defaultModels[provider] || "").setValue(this.plugin.settings.model).onChange((v) => {
       this.plugin.settings.model = v.trim();
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
   }
   addLocalLLMSection(containerEl) {
@@ -779,50 +823,47 @@ var ExtractorSettingTab = class extends import_obsidian.PluginSettingTab {
       return;
     containerEl.createEl("h3", { text: "Local LLM Configuration" });
     if (this.plugin.settings.provider === "ollama") {
-      new import_obsidian.Setting(containerEl).setName("Ollama URL").setDesc("URL for your Ollama instance.").addText((text) => text.setValue(this.plugin.settings.ollamaUrl).onChange(async (v) => {
+      new import_obsidian.Setting(containerEl).setName("Ollama URL").setDesc("URL for your Ollama instance.").addText((text) => text.setValue(this.plugin.settings.ollamaUrl).onChange((v) => {
         this.plugin.settings.ollamaUrl = v.trim();
-        await this.plugin.saveSettings();
-        await this.plugin.detectServices();
+        this.debouncedSave();
       }));
     }
     if (this.plugin.settings.provider === "lmstudio") {
-      new import_obsidian.Setting(containerEl).setName("LM Studio URL").setDesc("URL for your LM Studio instance.").addText((text) => text.setValue(this.plugin.settings.lmstudioUrl).onChange(async (v) => {
+      new import_obsidian.Setting(containerEl).setName("LM Studio URL").setDesc("URL for your LM Studio instance.").addText((text) => text.setValue(this.plugin.settings.lmstudioUrl).onChange((v) => {
         this.plugin.settings.lmstudioUrl = v.trim();
-        await this.plugin.saveSettings();
-        await this.plugin.detectServices();
+        this.debouncedSave();
       }));
     }
-    new import_obsidian.Setting(containerEl).setName("Model Refresh Interval").setDesc("How often to check for available models (minutes).").addSlider((slider) => slider.setLimits(1, 60, 1).setValue(this.plugin.settings.localModelRefreshInterval).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Model Refresh Interval").setDesc("How often to check for available models (minutes).").addSlider((slider) => slider.setLimits(1, 60, 1).setValue(this.plugin.settings.localModelRefreshInterval).setDynamicTooltip().onChange((v) => {
       this.plugin.settings.localModelRefreshInterval = v;
-      await this.plugin.saveSettings();
-      this.plugin.setupServiceMonitoring();
+      this.debouncedSave();
     }));
   }
   addProcessingSection(containerEl) {
     containerEl.createEl("h3", { text: "Processing Settings" });
-    new import_obsidian.Setting(containerEl).setName("Owner name").setDesc("Exact name the LLM should look for when deciding tasks.").addText((text) => text.setPlaceholder("Bryan Kolb").setValue(this.plugin.settings.ownerName).onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Owner name").setDesc("Exact name the LLM should look for when deciding tasks.").addText((text) => text.setPlaceholder("Bryan Kolb").setValue(this.plugin.settings.ownerName).onChange((v) => {
       this.plugin.settings.ownerName = v.trim();
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
-    new import_obsidian.Setting(containerEl).setName("Tasks folder").setDesc("Folder where generated task notes will be created.").addText((text) => text.setValue(this.plugin.settings.tasksFolder).onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Tasks folder").setDesc("Folder where generated task notes will be created.").addText((text) => text.setValue(this.plugin.settings.tasksFolder).onChange((v) => {
       this.plugin.settings.tasksFolder = v.trim();
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
-    new import_obsidian.Setting(containerEl).setName("Trigger note types").setDesc("Comma-separated list of note types to process (from frontmatter Type field).").addText((text) => text.setValue(this.plugin.settings.triggerTypes.join(", ")).onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Trigger note types").setDesc("Comma-separated list of note types to process (from frontmatter Type field).").addText((text) => text.setValue(this.plugin.settings.triggerTypes.join(", ")).onChange((v) => {
       this.plugin.settings.triggerTypes = v.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
-    new import_obsidian.Setting(containerEl).setName("Process edits as well as new files").setDesc("If enabled, modifications to matching notes will be processed too.").addToggle((toggle) => toggle.setValue(this.plugin.settings.processOnUpdate).onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Process edits as well as new files").setDesc("If enabled, modifications to matching notes will be processed too.").addToggle((toggle) => toggle.setValue(this.plugin.settings.processOnUpdate).onChange((v) => {
       this.plugin.settings.processOnUpdate = v;
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
-    new import_obsidian.Setting(containerEl).setName("Link back to source").setDesc("Insert a link back to the source note in generated task notes.").addToggle((toggle) => toggle.setValue(this.plugin.settings.linkBack).onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Link back to source").setDesc("Insert a link back to the source note in generated task notes.").addToggle((toggle) => toggle.setValue(this.plugin.settings.linkBack).onChange((v) => {
       this.plugin.settings.linkBack = v;
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
-    new import_obsidian.Setting(containerEl).setName("Processed marker key").setDesc("Frontmatter key to mark processed notes.").addText((text) => text.setValue(this.plugin.settings.processedFrontmatterKey).onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Processed marker key").setDesc("Frontmatter key to mark processed notes.").addText((text) => text.setValue(this.plugin.settings.processedFrontmatterKey).onChange((v) => {
       this.plugin.settings.processedFrontmatterKey = v.trim();
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
   }
   addFrontmatterSection(containerEl) {
@@ -846,28 +887,28 @@ var ExtractorSettingTab = class extends import_obsidian.PluginSettingTab {
         this.display();
       }));
     });
-    new import_obsidian.Setting(containerEl).setName("Custom Prompt").setDesc("Override the default task extraction prompt. Leave empty to use default.").addTextArea((text) => text.setPlaceholder("Enter custom prompt...").setValue(this.plugin.settings.customPrompt).onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Custom Prompt").setDesc("Override the default task extraction prompt. Leave empty to use default.").addTextArea((text) => text.setPlaceholder("Enter custom prompt...").setValue(this.plugin.settings.customPrompt).onChange((v) => {
       this.plugin.settings.customPrompt = v;
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
   }
   addAdvancedSection(containerEl) {
     containerEl.createEl("h3", { text: "Advanced Settings" });
-    new import_obsidian.Setting(containerEl).setName("Max Tokens").setDesc("Maximum tokens to generate.").addSlider((slider) => slider.setLimits(100, 2e3, 50).setValue(this.plugin.settings.maxTokens).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Max Tokens").setDesc("Maximum tokens to generate.").addSlider((slider) => slider.setLimits(100, 2e3, 50).setValue(this.plugin.settings.maxTokens).setDynamicTooltip().onChange((v) => {
       this.plugin.settings.maxTokens = v;
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
-    new import_obsidian.Setting(containerEl).setName("Temperature").setDesc("Creativity level (0 = deterministic, 1 = creative).").addSlider((slider) => slider.setLimits(0, 1, 0.1).setValue(this.plugin.settings.temperature).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Temperature").setDesc("Creativity level (0 = deterministic, 1 = creative).").addSlider((slider) => slider.setLimits(0, 1, 0.1).setValue(this.plugin.settings.temperature).setDynamicTooltip().onChange((v) => {
       this.plugin.settings.temperature = v;
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
-    new import_obsidian.Setting(containerEl).setName("Timeout (seconds)").setDesc("Request timeout for LLM calls.").addSlider((slider) => slider.setLimits(10, 120, 5).setValue(this.plugin.settings.timeout).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Timeout (seconds)").setDesc("Request timeout for LLM calls.").addSlider((slider) => slider.setLimits(10, 120, 5).setValue(this.plugin.settings.timeout).setDynamicTooltip().onChange((v) => {
       this.plugin.settings.timeout = v;
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
-    new import_obsidian.Setting(containerEl).setName("Retry Attempts").setDesc("Number of retry attempts for failed requests.").addSlider((slider) => slider.setLimits(1, 5, 1).setValue(this.plugin.settings.retries).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian.Setting(containerEl).setName("Retry Attempts").setDesc("Number of retry attempts for failed requests.").addSlider((slider) => slider.setLimits(1, 5, 1).setValue(this.plugin.settings.retries).setDynamicTooltip().onChange((v) => {
       this.plugin.settings.retries = v;
-      await this.plugin.saveSettings();
+      this.debouncedSave();
     }));
   }
   updateServiceStatus(statusEl) {

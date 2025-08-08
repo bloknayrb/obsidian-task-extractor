@@ -104,6 +104,7 @@ export default class TaskExtractorPlugin extends Plugin {
   serviceCheckInterval: NodeJS.Timeout | null = null;
   cloudModelCache: Map<string, string[]> = new Map();
   apiKeyMissingNotified: Set<string> = new Set(); // Track which providers we've already notified about
+  fileChangeDebouncer: Map<string, NodeJS.Timeout> = new Map(); // Debounce file changes
 
   async onload() {
     console.log('Loading Task Extractor plugin...');
@@ -116,7 +117,7 @@ export default class TaskExtractorPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on('create', (file) => {
         if (file instanceof TFile) {
-          this.onFileChanged(file);
+          this.debounceFileChange(file);
         }
       })
     );
@@ -125,7 +126,7 @@ export default class TaskExtractorPlugin extends Plugin {
       this.registerEvent(
         this.app.vault.on('modify', (file) => {
           if (file instanceof TFile) {
-            this.onFileChanged(file);
+            this.debounceFileChange(file);
           }
         })
       );
@@ -133,9 +134,6 @@ export default class TaskExtractorPlugin extends Plugin {
 
     // Initialize service detection
     await this.initializeServices();
-    
-    // Set up periodic service checking
-    this.setupServiceMonitoring();
     
     // Also scan existing unprocessed files once on load (non-blocking)
     this.scanExistingFiles();
@@ -147,6 +145,9 @@ export default class TaskExtractorPlugin extends Plugin {
       clearInterval(this.serviceCheckInterval);
       this.serviceCheckInterval = null;
     }
+    // Clear pending file change timeouts
+    this.fileChangeDebouncer.forEach(timeout => clearTimeout(timeout));
+    this.fileChangeDebouncer.clear();
     // Clear caches
     this.cloudModelCache.clear();
     this.apiKeyMissingNotified.clear();
@@ -158,6 +159,19 @@ export default class TaskExtractorPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  // Debounce file changes to prevent rapid processing
+  private debounceFileChange(file: TFile) {
+    const existing = this.fileChangeDebouncer.get(file.path);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    
+    this.fileChangeDebouncer.set(file.path, setTimeout(() => {
+      this.onFileChanged(file);
+      this.fileChangeDebouncer.delete(file.path);
+    }, 2000));
   }
 
   // When a file is created or modified
@@ -273,76 +287,88 @@ export default class TaskExtractorPlugin extends Plugin {
 
   // Service Detection and Management
   async initializeServices() {
-    await this.detectServices();
+    // No longer do upfront detection - use lazy loading
   }
 
-  setupServiceMonitoring() {
-    if (this.serviceCheckInterval) {
-      clearInterval(this.serviceCheckInterval);
+  // Get service with 30-minute cache TTL
+  private async getService(provider: string): Promise<LLMService | null> {
+    const cached = this.serviceCache.get(provider);
+    const now = Date.now();
+    const cacheValidMs = 30 * 60 * 1000; // 30 minutes
+    
+    if (cached && (now - cached.lastChecked) < cacheValidMs) {
+      return cached;
     }
     
-    const intervalMs = this.settings.localModelRefreshInterval * 60 * 1000;
-    this.serviceCheckInterval = setInterval(async () => {
-      await this.detectServices();
-    }, intervalMs);
+    return await this.detectSingleService(provider);
   }
 
-  async detectServices(): Promise<Map<string, LLMService>> {
-    const services = new Map<string, LLMService>();
+  // Detect a single service instead of all services
+  private async detectSingleService(provider: string): Promise<LLMService | null> {
     const now = Date.now();
     
-    // Check Ollama
-    const ollamaService: LLMService = {
-      name: 'ollama',
-      url: this.settings.ollamaUrl,
-      available: false,
-      models: [],
-      lastChecked: now
-    };
-    
-    try {
-      const ollamaResponse = await fetch(`${this.settings.ollamaUrl}/api/tags`, {
-        signal: this.createTimeoutSignal(5000)
-      });
+    if (provider === 'ollama') {
+      const service: LLMService = {
+        name: 'ollama',
+        url: this.settings.ollamaUrl,
+        available: false,
+        models: [],
+        lastChecked: now
+      };
       
-      if (ollamaResponse.ok) {
-        const data = await ollamaResponse.json();
-        ollamaService.available = true;
-        ollamaService.models = data.models?.map((m: any) => m.name) || [];
+      try {
+        const response = await fetch(`${this.settings.ollamaUrl}/api/tags`, {
+          signal: this.createTimeoutSignal(5000)
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          service.available = true;
+          service.models = data.models?.map((m: any) => m.name) || [];
+        }
+      } catch (error) {
+        console.log('Ollama not available:', error.message);
       }
-    } catch (error) {
-      console.log('Ollama not available:', error.message);
+      
+      this.serviceCache.set('ollama', service);
+      return service;
     }
     
-    services.set('ollama', ollamaService);
-    
-    // Check LM Studio
-    const lmstudioService: LLMService = {
-      name: 'lmstudio',
-      url: this.settings.lmstudioUrl,
-      available: false,
-      models: [],
-      lastChecked: now
-    };
-    
-    try {
-      const lmstudioResponse = await fetch(`${this.settings.lmstudioUrl}/v1/models`, {
-        signal: this.createTimeoutSignal(5000)
-      });
+    if (provider === 'lmstudio') {
+      const service: LLMService = {
+        name: 'lmstudio',
+        url: this.settings.lmstudioUrl,
+        available: false,
+        models: [],
+        lastChecked: now
+      };
       
-      if (lmstudioResponse.ok) {
-        const data = await lmstudioResponse.json();
-        lmstudioService.available = true;
-        lmstudioService.models = data.data?.map((m: any) => m.id) || [];
+      try {
+        const response = await fetch(`${this.settings.lmstudioUrl}/v1/models`, {
+          signal: this.createTimeoutSignal(5000)
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          service.available = true;
+          service.models = data.data?.map((m: any) => m.id) || [];
+        }
+      } catch (error) {
+        console.log('LM Studio not available:', error.message);
       }
-    } catch (error) {
-      console.log('LM Studio not available:', error.message);
+      
+      this.serviceCache.set('lmstudio', service);
+      return service;
     }
     
-    services.set('lmstudio', lmstudioService);
-    
-    this.serviceCache = services;
-    return services;
+    return null;
+  }
+
+  // Legacy method for backward compatibility - now uses on-demand detection
+  async detectServices(): Promise<Map<string, LLMService>> {
+    await this.getService('ollama');
+    await this.getService('lmstudio');
+    return this.serviceCache;
   }
 
   getAvailableServices(): LLMService[] {
@@ -732,7 +758,7 @@ export default class TaskExtractorPlugin extends Plugin {
   }
   
   async callOllama(systemPrompt: string, userPrompt: string): Promise<string | null> {
-    const service = this.serviceCache.get('ollama');
+    const service = await this.getService('ollama');
     if (!service?.available || !service.models.length) {
       throw new Error('Ollama service not available or no models loaded');
     }
@@ -780,7 +806,7 @@ export default class TaskExtractorPlugin extends Plugin {
   }
   
   async callLMStudio(systemPrompt: string, userPrompt: string): Promise<string | null> {
-    const service = this.serviceCache.get('lmstudio');
+    const service = await this.getService('lmstudio');
     if (!service?.available || !service.models.length) {
       throw new Error('LM Studio service not available or no models loaded');
     }
@@ -828,10 +854,32 @@ export default class TaskExtractorPlugin extends Plugin {
 
 class ExtractorSettingTab extends PluginSettingTab {
   plugin: TaskExtractorPlugin;
+  private saveTimeout: NodeJS.Timeout | null = null;
 
   constructor(app: App, plugin: TaskExtractorPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  // Debounced save to reduce save frequency
+  private debouncedSave() {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+    
+    this.saveTimeout = setTimeout(async () => {
+      await this.plugin.saveSettings();
+      this.saveTimeout = null;
+    }, 500);
+  }
+
+  // Clean up timeout on hide
+  hide() {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+      this.saveTimeout = null;
+    }
+    super.hide();
   }
 
   display(): void {
@@ -872,9 +920,9 @@ class ExtractorSettingTab extends PluginSettingTab {
         .addOption('ollama', 'Ollama (Local)')
         .addOption('lmstudio', 'LM Studio (Local)')
         .setValue(this.plugin.settings.provider)
-        .onChange(async (v) => { 
+        .onChange((v) => { 
           this.plugin.settings.provider = v as any; 
-          await this.plugin.saveSettings();
+          this.debouncedSave();
           
           // Clear API key notification when switching providers
           this.plugin.apiKeyMissingNotified.clear();
@@ -891,9 +939,9 @@ class ExtractorSettingTab extends PluginSettingTab {
         .addText(text => text
           .setPlaceholder('sk-... or claude-...')
           .setValue(this.plugin.settings.apiKey)
-          .onChange(async (v) => { 
+          .onChange((v) => { 
             this.plugin.settings.apiKey = v.trim(); 
-            await this.plugin.saveSettings();
+            this.debouncedSave();
             
             // Clear model cache when API key changes
             const oldCacheKeys = Array.from(this.plugin.cloudModelCache.keys())
@@ -927,7 +975,7 @@ class ExtractorSettingTab extends PluginSettingTab {
         .addDropdown(cb => {
           service.models.forEach(model => cb.addOption(model, model));
           cb.setValue(this.plugin.settings.model || service.models[0])
-            .onChange(async (v) => { this.plugin.settings.model = v; await this.plugin.saveSettings(); });
+            .onChange((v) => { this.plugin.settings.model = v; this.debouncedSave(); });
         });
     } else if (['openai', 'anthropic'].includes(provider) && this.plugin.settings.apiKey) {
       // Show loading state while fetching models
@@ -949,7 +997,7 @@ class ExtractorSettingTab extends PluginSettingTab {
             const currentModel = this.plugin.settings.model;
             const defaultModel = availableModels.includes(currentModel) ? currentModel : availableModels[0];
             cb.setValue(defaultModel)
-              .onChange(async (v) => { this.plugin.settings.model = v; await this.plugin.saveSettings(); });
+              .onChange((v) => { this.plugin.settings.model = v; this.debouncedSave(); });
           });
           
         // Add refresh button
@@ -996,7 +1044,7 @@ class ExtractorSettingTab extends PluginSettingTab {
       .addText(text => text
         .setPlaceholder(defaultModels[provider as keyof typeof defaultModels] || '')
         .setValue(this.plugin.settings.model)
-        .onChange(async (v) => { this.plugin.settings.model = v.trim(); await this.plugin.saveSettings(); }));
+        .onChange((v) => { this.plugin.settings.model = v.trim(); this.debouncedSave(); }));
   }
   
   addLocalLLMSection(containerEl: HTMLElement): void {
@@ -1010,10 +1058,10 @@ class ExtractorSettingTab extends PluginSettingTab {
         .setDesc('URL for your Ollama instance.')
         .addText(text => text
           .setValue(this.plugin.settings.ollamaUrl)
-          .onChange(async (v) => { 
+          .onChange((v) => { 
             this.plugin.settings.ollamaUrl = v.trim(); 
-            await this.plugin.saveSettings();
-            await this.plugin.detectServices();
+            this.debouncedSave();
+            // Service will be re-detected on next use due to URL change
           }));
     }
     
@@ -1023,10 +1071,10 @@ class ExtractorSettingTab extends PluginSettingTab {
         .setDesc('URL for your LM Studio instance.')
         .addText(text => text
           .setValue(this.plugin.settings.lmstudioUrl)
-          .onChange(async (v) => { 
+          .onChange((v) => { 
             this.plugin.settings.lmstudioUrl = v.trim(); 
-            await this.plugin.saveSettings();
-            await this.plugin.detectServices();
+            this.debouncedSave();
+            // Service will be re-detected on next use due to URL change
           }));
     }
     
@@ -1037,10 +1085,10 @@ class ExtractorSettingTab extends PluginSettingTab {
         .setLimits(1, 60, 1)
         .setValue(this.plugin.settings.localModelRefreshInterval)
         .setDynamicTooltip()
-        .onChange(async (v) => { 
+        .onChange((v) => { 
           this.plugin.settings.localModelRefreshInterval = v; 
-          await this.plugin.saveSettings();
-          this.plugin.setupServiceMonitoring();
+          this.debouncedSave();
+          // Note: Service monitoring now uses on-demand detection
         }));
   }
   
@@ -1053,23 +1101,23 @@ class ExtractorSettingTab extends PluginSettingTab {
       .addText(text => text
         .setPlaceholder('Bryan Kolb')
         .setValue(this.plugin.settings.ownerName)
-        .onChange(async (v) => { this.plugin.settings.ownerName = v.trim(); await this.plugin.saveSettings(); }));
+        .onChange((v) => { this.plugin.settings.ownerName = v.trim(); this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Tasks folder')
       .setDesc('Folder where generated task notes will be created.')
       .addText(text => text
         .setValue(this.plugin.settings.tasksFolder)
-        .onChange(async (v) => { this.plugin.settings.tasksFolder = v.trim(); await this.plugin.saveSettings(); }));
+        .onChange((v) => { this.plugin.settings.tasksFolder = v.trim(); this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Trigger note types')
       .setDesc('Comma-separated list of note types to process (from frontmatter Type field).')
       .addText(text => text
         .setValue(this.plugin.settings.triggerTypes.join(', '))
-        .onChange(async (v) => { 
+        .onChange((v) => { 
           this.plugin.settings.triggerTypes = v.split(',').map(s => s.trim()).filter(s => s.length > 0);
-          await this.plugin.saveSettings(); 
+          this.debouncedSave(); 
         }));
     
     new Setting(containerEl)
@@ -1077,21 +1125,21 @@ class ExtractorSettingTab extends PluginSettingTab {
       .setDesc('If enabled, modifications to matching notes will be processed too.')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.processOnUpdate)
-        .onChange(async (v) => { this.plugin.settings.processOnUpdate = v; await this.plugin.saveSettings(); }));
+        .onChange((v) => { this.plugin.settings.processOnUpdate = v; this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Link back to source')
       .setDesc('Insert a link back to the source note in generated task notes.')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.linkBack)
-        .onChange(async (v) => { this.plugin.settings.linkBack = v; await this.plugin.saveSettings(); }));
+        .onChange((v) => { this.plugin.settings.linkBack = v; this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Processed marker key')
       .setDesc('Frontmatter key to mark processed notes.')
       .addText(text => text
         .setValue(this.plugin.settings.processedFrontmatterKey)
-        .onChange(async (v) => { this.plugin.settings.processedFrontmatterKey = v.trim(); await this.plugin.saveSettings(); }));
+        .onChange((v) => { this.plugin.settings.processedFrontmatterKey = v.trim(); this.debouncedSave(); }));
   }
   
   addFrontmatterSection(containerEl: HTMLElement): void {
@@ -1141,7 +1189,7 @@ class ExtractorSettingTab extends PluginSettingTab {
       .addTextArea(text => text
         .setPlaceholder('Enter custom prompt...')
         .setValue(this.plugin.settings.customPrompt)
-        .onChange(async (v) => { this.plugin.settings.customPrompt = v; await this.plugin.saveSettings(); }));
+        .onChange((v) => { this.plugin.settings.customPrompt = v; this.debouncedSave(); }));
   }
   
   addAdvancedSection(containerEl: HTMLElement): void {
@@ -1154,7 +1202,7 @@ class ExtractorSettingTab extends PluginSettingTab {
         .setLimits(100, 2000, 50)
         .setValue(this.plugin.settings.maxTokens)
         .setDynamicTooltip()
-        .onChange(async (v) => { this.plugin.settings.maxTokens = v; await this.plugin.saveSettings(); }));
+        .onChange((v) => { this.plugin.settings.maxTokens = v; this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Temperature')
@@ -1163,7 +1211,7 @@ class ExtractorSettingTab extends PluginSettingTab {
         .setLimits(0, 1, 0.1)
         .setValue(this.plugin.settings.temperature)
         .setDynamicTooltip()
-        .onChange(async (v) => { this.plugin.settings.temperature = v; await this.plugin.saveSettings(); }));
+        .onChange((v) => { this.plugin.settings.temperature = v; this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Timeout (seconds)')
@@ -1172,7 +1220,7 @@ class ExtractorSettingTab extends PluginSettingTab {
         .setLimits(10, 120, 5)
         .setValue(this.plugin.settings.timeout)
         .setDynamicTooltip()
-        .onChange(async (v) => { this.plugin.settings.timeout = v; await this.plugin.saveSettings(); }));
+        .onChange((v) => { this.plugin.settings.timeout = v; this.debouncedSave(); }));
     
     new Setting(containerEl)
       .setName('Retry Attempts')
@@ -1181,7 +1229,7 @@ class ExtractorSettingTab extends PluginSettingTab {
         .setLimits(1, 5, 1)
         .setValue(this.plugin.settings.retries)
         .setDynamicTooltip()
-        .onChange(async (v) => { this.plugin.settings.retries = v; await this.plugin.saveSettings(); }));
+        .onChange((v) => { this.plugin.settings.retries = v; this.debouncedSave(); }));
   }
   
   updateServiceStatus(statusEl: HTMLElement): void {
