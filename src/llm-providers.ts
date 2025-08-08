@@ -2,6 +2,7 @@
  * LLM Provider implementations and service detection
  */
 
+import { requestUrl } from 'obsidian';
 import { ExtractorSettings, LLMService } from './types';
 
 export class LLMProviderManager {
@@ -38,9 +39,11 @@ export class LLMProviderManager {
       };
       
       try {
-        const response = await fetch(`${this.settings.ollamaUrl}/api/tags`, {
-          signal: this.createTimeoutSignal(5000)
+        const rawResponse = await requestUrl({
+          url: `${this.settings.ollamaUrl}/api/tags`,
+          method: 'GET'
         });
+        const response = this.adaptRequestUrlResponse(rawResponse);
         
         if (response.ok) {
           const data = await response.json();
@@ -65,9 +68,11 @@ export class LLMProviderManager {
       };
       
       try {
-        const response = await fetch(`${this.settings.lmstudioUrl}/v1/models`, {
-          signal: this.createTimeoutSignal(5000)
+        const rawResponse = await requestUrl({
+          url: `${this.settings.lmstudioUrl}/v1/models`,
+          method: 'GET'
         });
+        const response = this.adaptRequestUrlResponse(rawResponse);
         
         if (response.ok) {
           const data = await response.json();
@@ -194,15 +199,16 @@ export class LLMProviderManager {
     };
 
     try {
-      const resp = await fetch(endpoint, {
+      const rawResp = await requestUrl({
+        url: endpoint,
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.settings.apiKey}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(body),
-        signal: this.createTimeoutSignal(this.settings.timeout * 1000)
+        body: JSON.stringify(body)
       });
+      const resp = this.adaptRequestUrlResponse(rawResp);
       
       if (!resp.ok) {
         const text = await resp.text();
@@ -222,7 +228,8 @@ export class LLMProviderManager {
     const endpoint = 'https://api.anthropic.com/v1/messages';
     
     try {
-      const resp = await fetch(endpoint, {
+      const rawResp = await requestUrl({
+        url: endpoint,
         method: 'POST',
         headers: {
           'x-api-key': this.settings.apiKey,
@@ -238,9 +245,9 @@ export class LLMProviderManager {
             role: 'user',
             content: userPrompt
           }]
-        }),
-        signal: this.createTimeoutSignal(this.settings.timeout * 1000)
+        })
       });
+      const resp = this.adaptRequestUrlResponse(rawResp);
       
       if (!resp.ok) {
         const text = await resp.text();
@@ -270,7 +277,8 @@ export class LLMProviderManager {
     const endpoint = `${this.settings.ollamaUrl}/api/chat`;
     
     try {
-      const resp = await fetch(endpoint, {
+      const rawResp = await requestUrl({
+        url: endpoint,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -286,9 +294,9 @@ export class LLMProviderManager {
             temperature: this.settings.temperature,
             num_predict: this.settings.maxTokens
           }
-        }),
-        signal: this.createTimeoutSignal(this.settings.timeout * 1000)
+        })
       });
+      const resp = this.adaptRequestUrlResponse(rawResp);
       
       if (!resp.ok) {
         const text = await resp.text();
@@ -318,7 +326,8 @@ export class LLMProviderManager {
     const endpoint = `${this.settings.lmstudioUrl}/v1/chat/completions`;
     
     try {
-      const resp = await fetch(endpoint, {
+      const rawResp = await requestUrl({
+        url: endpoint,
         method: 'POST',
         headers: {
           'Authorization': 'Bearer lm-studio', // Placeholder auth
@@ -332,9 +341,9 @@ export class LLMProviderManager {
           ],
           temperature: this.settings.temperature,
           max_tokens: this.settings.maxTokens
-        }),
-        signal: this.createTimeoutSignal(this.settings.timeout * 1000)
+        })
       });
+      const resp = this.adaptRequestUrlResponse(rawResp);
       
       if (!resp.ok) {
         const text = await resp.text();
@@ -377,13 +386,15 @@ export class LLMProviderManager {
   }
 
   private async fetchOpenAIModels(): Promise<string[]> {
-    const response = await fetch('https://api.openai.com/v1/models', {
+    const rawResponse = await requestUrl({
+      url: 'https://api.openai.com/v1/models',
+      method: 'GET',
       headers: {
         'Authorization': `Bearer ${this.settings.apiKey}`,
         'Content-Type': 'application/json'
-      },
-      signal: this.createTimeoutSignal(10000)
+      }
     });
+    const response = this.adaptRequestUrlResponse(rawResponse);
     
     if (!response.ok) {
       throw new Error(`OpenAI API error: ${response.status}`);
@@ -446,6 +457,17 @@ export class LLMProviderManager {
     this.cloudModelCache.clear();
     this.apiKeyMissingNotified.clear();
     this.serviceCache.clear();
+  }
+
+  // Helper to adapt requestUrl response to fetch-like interface
+  private adaptRequestUrlResponse(response: any) {
+    return {
+      ok: response.status >= 200 && response.status < 300,
+      status: response.status,
+      statusText: response.status.toString(),
+      json: async () => response.json,
+      text: async () => response.text
+    };
   }
 
   // Methods for backward compatibility

@@ -146,17 +146,45 @@ export class TaskProcessor {
 
   private async markFileProcessed(file: TFile) {
     if (!this.settings.processedFrontmatterKey) return;
+    
+    try {
+      // Use Obsidian's official API for atomic frontmatter processing
+      await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+        // Handle nested keys (e.g., "taskExtractor.processed")
+        const keys = this.settings.processedFrontmatterKey.split('.');
+        let current = frontmatter;
+        
+        // Navigate to the nested property, creating objects as needed
+        for (let i = 0; i < keys.length - 1; i++) {
+          const key = keys[i];
+          if (!current[key] || typeof current[key] !== 'object') {
+            current[key] = {};
+          }
+          current = current[key];
+        }
+        
+        // Set the final property
+        current[keys[keys.length - 1]] = true;
+      });
+    } catch (e) {
+      console.warn('Failed to mark file processed with official API:', e);
+      // Fallback to previous method if the official API fails
+      await this.markFileProcessedFallback(file);
+    }
+  }
+
+  // Fallback method using the previous implementation
+  private async markFileProcessedFallback(file: TFile) {
     try {
       const content = await this.app.vault.read(file);
       const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
       let newContent = content;
       if (fmMatch) {
         const fm = fmMatch[1];
-        // naive append processed key
-        const lines = fm.split('\n');
         const processedKey = this.settings.processedFrontmatterKey;
         // if already present, skip
         if (!new RegExp('^' + processedKey.replace('.', '\\.') + ':', 'm').test(fm)) {
+          const lines = fm.split('\n');
           lines.push(`${processedKey}: true`);
           const updatedFm = lines.join('\n');
           newContent = content.replace(fmMatch[0], `---\n${updatedFm}\n---`);
@@ -169,7 +197,7 @@ export class TaskProcessor {
         await this.app.vault.modify(file, newContent);
       }
     } catch (e) {
-      console.warn('Failed to mark file processed', e);
+      console.warn('Failed to mark file processed with fallback method:', e);
     }
   }
 
