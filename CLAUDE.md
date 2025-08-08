@@ -9,9 +9,11 @@ This is an Obsidian plugin that leverages LLMs to extract todo items from notes.
 ## Key Features
 
 - **Multi-provider LLM support**: OpenAI, Anthropic, Ollama, and LM Studio
+- **Dynamic model fetching**: Automatically retrieves available models from cloud providers
+- **Smart settings UI**: Dropdowns for model selection with loading states and error handling  
 - **Task extraction**: Analyzes notes and extracts actionable todo items
-- **Frontmatter integration**: Adds Project and Client fields to task note frontmatter
-- **Inline checklist option**: Can insert `- [ ] Task Title` checklists in original notes
+- **Frontmatter integration**: Fully customizable frontmatter templates with 8 field types
+- **Notification management**: Single notifications (no spam) for missing API keys
 - **Local LLM endpoints**: 
   - Ollama: `http://localhost:11434/api/generate`
   - LM Studio: `http://localhost:1234/v1/chat/completions`

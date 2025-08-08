@@ -102,6 +102,8 @@ export default class TaskExtractorPlugin extends Plugin {
   processingFiles: Set<string> = new Set();
   serviceCache: Map<string, LLMService> = new Map();
   serviceCheckInterval: NodeJS.Timeout | null = null;
+  cloudModelCache: Map<string, string[]> = new Map();
+  apiKeyMissingNotified: Set<string> = new Set(); // Track which providers we've already notified about
 
   async onload() {
     console.log('Loading Task Extractor plugin...');
@@ -145,6 +147,9 @@ export default class TaskExtractorPlugin extends Plugin {
       clearInterval(this.serviceCheckInterval);
       this.serviceCheckInterval = null;
     }
+    // Clear caches
+    this.cloudModelCache.clear();
+    this.apiKeyMissingNotified.clear();
   }
 
   async loadSettings() {
@@ -480,10 +485,19 @@ export default class TaskExtractorPlugin extends Plugin {
   async callLLM(systemPrompt: string, userPrompt: string): Promise<string | null> {
     const provider = this.settings.provider;
     
-    // Check if API key is required for cloud providers
+    // Check if API key is required for cloud providers (only notify once per provider)
     if (['openai', 'anthropic'].includes(provider) && !this.settings.apiKey) {
-      new Notice('Task Extractor: API key not configured in plugin settings');
+      const notificationKey = `${provider}-no-api-key`;
+      if (!this.apiKeyMissingNotified.has(notificationKey)) {
+        new Notice(`Task Extractor: ${provider.toUpperCase()} API key not configured in plugin settings`);
+        this.apiKeyMissingNotified.add(notificationKey);
+      }
       return null;
+    }
+    
+    // Clear notification flag if API key is present
+    if (this.settings.apiKey) {
+      this.apiKeyMissingNotified.delete(`${provider}-no-api-key`);
     }
     
     // Try primary provider with retries
@@ -559,6 +573,86 @@ export default class TaskExtractorPlugin extends Plugin {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), ms);
     return controller.signal;
+  }
+  
+  // Fetch available models for cloud providers
+  async fetchCloudModels(provider: 'openai' | 'anthropic'): Promise<string[]> {
+    if (!this.settings.apiKey) {
+      return [];
+    }
+    
+    // Check cache first
+    const cacheKey = `${provider}-${this.settings.apiKey.slice(-4)}`; // Use last 4 chars for cache key
+    if (this.cloudModelCache.has(cacheKey)) {
+      return this.cloudModelCache.get(cacheKey) || [];
+    }
+    
+    try {
+      if (provider === 'openai') {
+        return await this.fetchOpenAIModels();
+      } else if (provider === 'anthropic') {
+        return await this.fetchAnthropicModels();
+      }
+    } catch (error) {
+      console.warn(`Failed to fetch ${provider} models:`, error.message);
+      return this.getDefaultModels(provider);
+    }
+    
+    return [];
+  }
+  
+  async fetchOpenAIModels(): Promise<string[]> {
+    const response = await fetch('https://api.openai.com/v1/models', {
+      headers: {
+        'Authorization': `Bearer ${this.settings.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      signal: this.createTimeoutSignal(10000)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const models = data.data
+      ?.filter((model: any) => model.id.includes('gpt') && !model.id.includes('instruct'))
+      ?.map((model: any) => model.id)
+      ?.sort() || [];
+    
+    // Cache the results
+    const cacheKey = `openai-${this.settings.apiKey.slice(-4)}`;
+    this.cloudModelCache.set(cacheKey, models);
+    
+    return models.length > 0 ? models : this.getDefaultModels('openai');
+  }
+  
+  async fetchAnthropicModels(): Promise<string[]> {
+    // Anthropic doesn't have a models endpoint, so return known models
+    const knownModels = [
+      'claude-3-5-sonnet-20241022',
+      'claude-3-5-haiku-20241022', 
+      'claude-3-opus-20240229',
+      'claude-3-sonnet-20240229',
+      'claude-3-haiku-20240307'
+    ];
+    
+    // Cache the results
+    const cacheKey = `anthropic-${this.settings.apiKey.slice(-4)}`;
+    this.cloudModelCache.set(cacheKey, knownModels);
+    
+    return knownModels;
+  }
+  
+  getDefaultModels(provider: string): string[] {
+    const defaults = {
+      openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+      anthropic: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
+      ollama: ['llama3.2', 'mistral', 'codellama'],
+      lmstudio: ['local-model']
+    };
+    
+    return defaults[provider as keyof typeof defaults] || [];
   }
 
   async callOpenAI(systemPrompt: string, userPrompt: string) {
@@ -781,6 +875,10 @@ class ExtractorSettingTab extends PluginSettingTab {
         .onChange(async (v) => { 
           this.plugin.settings.provider = v as any; 
           await this.plugin.saveSettings();
+          
+          // Clear API key notification when switching providers
+          this.plugin.apiKeyMissingNotified.clear();
+          
           this.updateServiceStatus(statusEl);
           this.display(); // Refresh to show/hide relevant settings
         }));
@@ -789,24 +887,41 @@ class ExtractorSettingTab extends PluginSettingTab {
     if (['openai', 'anthropic'].includes(this.plugin.settings.provider)) {
       new Setting(containerEl)
         .setName('API Key')
-        .setDesc('Your API key for the selected provider.')
+        .setDesc('Your API key for the selected provider. Models will be loaded automatically once entered.')
         .addText(text => text
-          .setPlaceholder('sk-...')
+          .setPlaceholder('sk-... or claude-...')
           .setValue(this.plugin.settings.apiKey)
-          .onChange(async (v) => { this.plugin.settings.apiKey = v.trim(); await this.plugin.saveSettings(); }));
+          .onChange(async (v) => { 
+            this.plugin.settings.apiKey = v.trim(); 
+            await this.plugin.saveSettings();
+            
+            // Clear model cache when API key changes
+            const oldCacheKeys = Array.from(this.plugin.cloudModelCache.keys())
+              .filter(key => key.startsWith(this.plugin.settings.provider));
+            oldCacheKeys.forEach(key => this.plugin.cloudModelCache.delete(key));
+            
+            // Clear notification flag
+            this.plugin.apiKeyMissingNotified.clear();
+            
+            // Refresh model dropdown
+            this.display();
+          }));
     }
 
-    // Model selection
+    // Model selection (async)
     this.addModelSetting(containerEl);
   }
   
-  addModelSetting(containerEl: HTMLElement): void {
+  async addModelSetting(containerEl: HTMLElement): Promise<void> {
     const provider = this.plugin.settings.provider;
     const service = this.plugin.serviceCache.get(provider);
     
+    // Create a container for the model setting that we can update
+    const modelContainer = containerEl.createDiv();
+    
     if (['ollama', 'lmstudio'].includes(provider) && service?.available && service.models.length > 0) {
       // Show dropdown for available local models
-      new Setting(containerEl)
+      new Setting(modelContainer)
         .setName('Model')
         .setDesc(`Select from ${service.models.length} available ${provider} models.`)
         .addDropdown(cb => {
@@ -814,23 +929,74 @@ class ExtractorSettingTab extends PluginSettingTab {
           cb.setValue(this.plugin.settings.model || service.models[0])
             .onChange(async (v) => { this.plugin.settings.model = v; await this.plugin.saveSettings(); });
         });
-    } else {
-      // Text input for cloud providers or when local service unavailable
-      const defaultModels = {
-        openai: 'gpt-4o-mini',
-        anthropic: 'claude-3-sonnet-20240229',
-        ollama: 'llama3.2',
-        lmstudio: 'local-model'
-      };
-      
-      new Setting(containerEl)
+    } else if (['openai', 'anthropic'].includes(provider) && this.plugin.settings.apiKey) {
+      // Show loading state while fetching models
+      const loadingSetting = new Setting(modelContainer)
         .setName('Model')
-        .setDesc(`Model name for ${provider}. ${['ollama', 'lmstudio'].includes(provider) ? 'Make sure the model is loaded in ' + provider + '.' : ''}`)
-        .addText(text => text
-          .setPlaceholder(defaultModels[provider as keyof typeof defaultModels])
-          .setValue(this.plugin.settings.model)
-          .onChange(async (v) => { this.plugin.settings.model = v.trim(); await this.plugin.saveSettings(); }));
+        .setDesc('Loading available models...');
+        
+      try {
+        const availableModels = await this.plugin.fetchCloudModels(provider as 'openai' | 'anthropic');
+        
+        // Clear loading state and show dropdown
+        modelContainer.empty();
+        
+        new Setting(modelContainer)
+          .setName('Model')
+          .setDesc(`Select from ${availableModels.length} available ${provider} models.`)
+          .addDropdown(cb => {
+            availableModels.forEach(model => cb.addOption(model, model));
+            const currentModel = this.plugin.settings.model;
+            const defaultModel = availableModels.includes(currentModel) ? currentModel : availableModels[0];
+            cb.setValue(defaultModel)
+              .onChange(async (v) => { this.plugin.settings.model = v; await this.plugin.saveSettings(); });
+          });
+          
+        // Add refresh button
+        new Setting(modelContainer)
+          .setName('Refresh Models')
+          .setDesc('Reload the list of available models from the API.')
+          .addButton(btn => btn
+            .setButtonText('Refresh')
+            .onClick(async () => {
+              // Clear cache and refresh
+              const cacheKey = `${provider}-${this.plugin.settings.apiKey.slice(-4)}`;
+              this.plugin.cloudModelCache.delete(cacheKey);
+              this.display(); // Refresh the entire settings page
+            }));
+            
+      } catch (error) {
+        // Show error state with fallback to text input
+        modelContainer.empty();
+        this.addTextModelSetting(modelContainer, provider, `Failed to load models: ${error.message}`);
+      }
+    } else {
+      // Text input for when API key missing or local service unavailable
+      const desc = !this.plugin.settings.apiKey && ['openai', 'anthropic'].includes(provider) 
+        ? 'Enter API key above to see available models'
+        : ['ollama', 'lmstudio'].includes(provider) 
+          ? `Make sure ${provider} is running and has models loaded`
+          : 'Enter model name';
+          
+      this.addTextModelSetting(modelContainer, provider, desc);
     }
+  }
+  
+  addTextModelSetting(container: HTMLElement, provider: string, description: string): void {
+    const defaultModels = {
+      openai: 'gpt-4o-mini',
+      anthropic: 'claude-3-haiku-20240307',
+      ollama: 'llama3.2',
+      lmstudio: 'local-model'
+    };
+    
+    new Setting(container)
+      .setName('Model')
+      .setDesc(description)
+      .addText(text => text
+        .setPlaceholder(defaultModels[provider as keyof typeof defaultModels] || '')
+        .setValue(this.plugin.settings.model)
+        .onChange(async (v) => { this.plugin.settings.model = v.trim(); await this.plugin.saveSettings(); }));
   }
   
   addLocalLLMSection(containerEl: HTMLElement): void {

@@ -68,7 +68,10 @@ var TaskExtractorPlugin = class extends import_obsidian.Plugin {
     this.processingFiles = /* @__PURE__ */ new Set();
     this.serviceCache = /* @__PURE__ */ new Map();
     this.serviceCheckInterval = null;
+    this.cloudModelCache = /* @__PURE__ */ new Map();
+    this.apiKeyMissingNotified = /* @__PURE__ */ new Set();
   }
+  // Track which providers we've already notified about
   async onload() {
     console.log("Loading Task Extractor plugin...");
     await this.loadSettings();
@@ -99,6 +102,8 @@ var TaskExtractorPlugin = class extends import_obsidian.Plugin {
       clearInterval(this.serviceCheckInterval);
       this.serviceCheckInterval = null;
     }
+    this.cloudModelCache.clear();
+    this.apiKeyMissingNotified.clear();
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -399,8 +404,15 @@ ${content}
   async callLLM(systemPrompt, userPrompt) {
     const provider = this.settings.provider;
     if (["openai", "anthropic"].includes(provider) && !this.settings.apiKey) {
-      new import_obsidian.Notice("Task Extractor: API key not configured in plugin settings");
+      const notificationKey = `${provider}-no-api-key`;
+      if (!this.apiKeyMissingNotified.has(notificationKey)) {
+        new import_obsidian.Notice(`Task Extractor: ${provider.toUpperCase()} API key not configured in plugin settings`);
+        this.apiKeyMissingNotified.add(notificationKey);
+      }
       return null;
+    }
+    if (this.settings.apiKey) {
+      this.apiKeyMissingNotified.delete(`${provider}-no-api-key`);
     }
     for (let attempt = 0; attempt < this.settings.retries; attempt++) {
       try {
@@ -462,6 +474,66 @@ ${content}
     const controller = new AbortController();
     setTimeout(() => controller.abort(), ms);
     return controller.signal;
+  }
+  // Fetch available models for cloud providers
+  async fetchCloudModels(provider) {
+    if (!this.settings.apiKey) {
+      return [];
+    }
+    const cacheKey = `${provider}-${this.settings.apiKey.slice(-4)}`;
+    if (this.cloudModelCache.has(cacheKey)) {
+      return this.cloudModelCache.get(cacheKey) || [];
+    }
+    try {
+      if (provider === "openai") {
+        return await this.fetchOpenAIModels();
+      } else if (provider === "anthropic") {
+        return await this.fetchAnthropicModels();
+      }
+    } catch (error) {
+      console.warn(`Failed to fetch ${provider} models:`, error.message);
+      return this.getDefaultModels(provider);
+    }
+    return [];
+  }
+  async fetchOpenAIModels() {
+    var _a, _b, _c;
+    const response = await fetch("https://api.openai.com/v1/models", {
+      headers: {
+        "Authorization": `Bearer ${this.settings.apiKey}`,
+        "Content-Type": "application/json"
+      },
+      signal: this.createTimeoutSignal(1e4)
+    });
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+    const data = await response.json();
+    const models = ((_c = (_b = (_a = data.data) == null ? void 0 : _a.filter((model) => model.id.includes("gpt") && !model.id.includes("instruct"))) == null ? void 0 : _b.map((model) => model.id)) == null ? void 0 : _c.sort()) || [];
+    const cacheKey = `openai-${this.settings.apiKey.slice(-4)}`;
+    this.cloudModelCache.set(cacheKey, models);
+    return models.length > 0 ? models : this.getDefaultModels("openai");
+  }
+  async fetchAnthropicModels() {
+    const knownModels = [
+      "claude-3-5-sonnet-20241022",
+      "claude-3-5-haiku-20241022",
+      "claude-3-opus-20240229",
+      "claude-3-sonnet-20240229",
+      "claude-3-haiku-20240307"
+    ];
+    const cacheKey = `anthropic-${this.settings.apiKey.slice(-4)}`;
+    this.cloudModelCache.set(cacheKey, knownModels);
+    return knownModels;
+  }
+  getDefaultModels(provider) {
+    const defaults = {
+      openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+      anthropic: ["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"],
+      ollama: ["llama3.2", "mistral", "codellama"],
+      lmstudio: ["local-model"]
+    };
+    return defaults[provider] || [];
   }
   async callOpenAI(systemPrompt, userPrompt) {
     var _a, _b, _c;
@@ -634,40 +706,73 @@ var ExtractorSettingTab = class extends import_obsidian.PluginSettingTab {
     new import_obsidian.Setting(containerEl).setName("Provider").setDesc("Choose LLM provider. Local providers (Ollama/LM Studio) require the service to be running.").addDropdown((cb) => cb.addOption("openai", "OpenAI").addOption("anthropic", "Anthropic").addOption("ollama", "Ollama (Local)").addOption("lmstudio", "LM Studio (Local)").setValue(this.plugin.settings.provider).onChange(async (v) => {
       this.plugin.settings.provider = v;
       await this.plugin.saveSettings();
+      this.plugin.apiKeyMissingNotified.clear();
       this.updateServiceStatus(statusEl);
       this.display();
     }));
     if (["openai", "anthropic"].includes(this.plugin.settings.provider)) {
-      new import_obsidian.Setting(containerEl).setName("API Key").setDesc("Your API key for the selected provider.").addText((text) => text.setPlaceholder("sk-...").setValue(this.plugin.settings.apiKey).onChange(async (v) => {
+      new import_obsidian.Setting(containerEl).setName("API Key").setDesc("Your API key for the selected provider. Models will be loaded automatically once entered.").addText((text) => text.setPlaceholder("sk-... or claude-...").setValue(this.plugin.settings.apiKey).onChange(async (v) => {
         this.plugin.settings.apiKey = v.trim();
         await this.plugin.saveSettings();
+        const oldCacheKeys = Array.from(this.plugin.cloudModelCache.keys()).filter((key) => key.startsWith(this.plugin.settings.provider));
+        oldCacheKeys.forEach((key) => this.plugin.cloudModelCache.delete(key));
+        this.plugin.apiKeyMissingNotified.clear();
+        this.display();
       }));
     }
     this.addModelSetting(containerEl);
   }
-  addModelSetting(containerEl) {
+  async addModelSetting(containerEl) {
     const provider = this.plugin.settings.provider;
     const service = this.plugin.serviceCache.get(provider);
+    const modelContainer = containerEl.createDiv();
     if (["ollama", "lmstudio"].includes(provider) && (service == null ? void 0 : service.available) && service.models.length > 0) {
-      new import_obsidian.Setting(containerEl).setName("Model").setDesc(`Select from ${service.models.length} available ${provider} models.`).addDropdown((cb) => {
+      new import_obsidian.Setting(modelContainer).setName("Model").setDesc(`Select from ${service.models.length} available ${provider} models.`).addDropdown((cb) => {
         service.models.forEach((model) => cb.addOption(model, model));
         cb.setValue(this.plugin.settings.model || service.models[0]).onChange(async (v) => {
           this.plugin.settings.model = v;
           await this.plugin.saveSettings();
         });
       });
+    } else if (["openai", "anthropic"].includes(provider) && this.plugin.settings.apiKey) {
+      const loadingSetting = new import_obsidian.Setting(modelContainer).setName("Model").setDesc("Loading available models...");
+      try {
+        const availableModels = await this.plugin.fetchCloudModels(provider);
+        modelContainer.empty();
+        new import_obsidian.Setting(modelContainer).setName("Model").setDesc(`Select from ${availableModels.length} available ${provider} models.`).addDropdown((cb) => {
+          availableModels.forEach((model) => cb.addOption(model, model));
+          const currentModel = this.plugin.settings.model;
+          const defaultModel = availableModels.includes(currentModel) ? currentModel : availableModels[0];
+          cb.setValue(defaultModel).onChange(async (v) => {
+            this.plugin.settings.model = v;
+            await this.plugin.saveSettings();
+          });
+        });
+        new import_obsidian.Setting(modelContainer).setName("Refresh Models").setDesc("Reload the list of available models from the API.").addButton((btn) => btn.setButtonText("Refresh").onClick(async () => {
+          const cacheKey = `${provider}-${this.plugin.settings.apiKey.slice(-4)}`;
+          this.plugin.cloudModelCache.delete(cacheKey);
+          this.display();
+        }));
+      } catch (error) {
+        modelContainer.empty();
+        this.addTextModelSetting(modelContainer, provider, `Failed to load models: ${error.message}`);
+      }
     } else {
-      const defaultModels = {
-        openai: "gpt-4o-mini",
-        anthropic: "claude-3-sonnet-20240229",
-        ollama: "llama3.2",
-        lmstudio: "local-model"
-      };
-      new import_obsidian.Setting(containerEl).setName("Model").setDesc(`Model name for ${provider}. ${["ollama", "lmstudio"].includes(provider) ? "Make sure the model is loaded in " + provider + "." : ""}`).addText((text) => text.setPlaceholder(defaultModels[provider]).setValue(this.plugin.settings.model).onChange(async (v) => {
-        this.plugin.settings.model = v.trim();
-        await this.plugin.saveSettings();
-      }));
+      const desc = !this.plugin.settings.apiKey && ["openai", "anthropic"].includes(provider) ? "Enter API key above to see available models" : ["ollama", "lmstudio"].includes(provider) ? `Make sure ${provider} is running and has models loaded` : "Enter model name";
+      this.addTextModelSetting(modelContainer, provider, desc);
     }
+  }
+  addTextModelSetting(container, provider, description) {
+    const defaultModels = {
+      openai: "gpt-4o-mini",
+      anthropic: "claude-3-haiku-20240307",
+      ollama: "llama3.2",
+      lmstudio: "local-model"
+    };
+    new import_obsidian.Setting(container).setName("Model").setDesc(description).addText((text) => text.setPlaceholder(defaultModels[provider] || "").setValue(this.plugin.settings.model).onChange(async (v) => {
+      this.plugin.settings.model = v.trim();
+      await this.plugin.saveSettings();
+    }));
   }
   addLocalLLMSection(containerEl) {
     if (!["ollama", "lmstudio"].includes(this.plugin.settings.provider))
