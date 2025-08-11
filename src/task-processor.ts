@@ -152,8 +152,23 @@ export class TaskProcessor {
       }
 
       // Use validated frontmatter field with fallback to "Type"
-      const frontmatterField = this.validateFrontmatterField(this.settings.triggerFrontmatterField);
+      const frontmatterField = this.validateFrontmatterField(this.settings.triggerFrontmatterField, correlationId);
       const typeRaw = this.getFrontmatterValue(front, frontmatterField) || '';
+      
+      // Log frontmatter field validation
+      if (typeRaw) {
+        this.debugLogger?.logValidationSuccess('frontmatter', `${frontmatterField}`, correlationId);
+      } else {
+        this.debugLogger?.logValidation(
+          'frontmatter',
+          frontmatterField,
+          typeRaw,
+          'non-empty value',
+          'Frontmatter field is empty or missing',
+          correlationId
+        );
+      }
+      
       const type = ('' + typeRaw).toLowerCase();
       const accepted = this.settings.triggerTypes.map(t => t.toLowerCase());
       
@@ -171,7 +186,20 @@ export class TaskProcessor {
           typeFound: type,
           acceptedTypes: accepted
         }, correlationId);
+        
+        // Log detailed validation context
+        this.debugLogger?.logValidation(
+          'frontmatter',
+          `${frontmatterField}.triggerMatch`,
+          type,
+          `one of: ${accepted.join(', ')}`,
+          `Value '${type}' does not match any trigger types`,
+          correlationId
+        );
         return;
+      } else {
+        // Log successful trigger type match
+        this.debugLogger?.logValidationSuccess('frontmatter', `${frontmatterField}.triggerMatch`, correlationId);
       }
 
       // Validate owner name is configured
@@ -902,10 +930,18 @@ When no tasks found, return: {"found": false, "tasks": []}`;
    * Validates frontmatter field name with graceful fallback to "Type"
    * Ensures the field name is valid for YAML and safe to use
    */
-  private validateFrontmatterField(fieldName: string): string {
+  private validateFrontmatterField(fieldName: string, correlationId?: string): string {
     // Check if empty or undefined
     if (!fieldName || typeof fieldName !== 'string' || fieldName.trim().length === 0) {
       console.warn('TaskExtractor: Empty frontmatter field name, falling back to "Type"');
+      this.debugLogger?.logValidation(
+        'frontmatter',
+        'fieldName',
+        fieldName,
+        'non-empty string',
+        'Empty frontmatter field name, using fallback "Type"',
+        correlationId
+      );
       return 'Type';
     }
 
@@ -917,15 +953,33 @@ When no tasks found, return: {"found": false, "tasks": []}`;
     
     if (!yamlKeyPattern.test(trimmed)) {
       console.warn(`TaskExtractor: Invalid frontmatter field name "${trimmed}", falling back to "Type"`);
+      this.debugLogger?.logValidation(
+        'frontmatter',
+        'fieldName',
+        trimmed,
+        'valid YAML key pattern (^[a-zA-Z_][a-zA-Z0-9_.-]*$)',
+        'Invalid YAML key format, using fallback "Type"',
+        correlationId
+      );
       return 'Type';
     }
 
     // Additional checks for problematic patterns
     if (trimmed.includes('..') || trimmed.startsWith('.') || trimmed.endsWith('.')) {
       console.warn(`TaskExtractor: Problematic frontmatter field name "${trimmed}", falling back to "Type"`);
+      this.debugLogger?.logValidation(
+        'frontmatter',
+        'fieldName',
+        trimmed,
+        'valid YAML key without problematic dot patterns',
+        'Problematic dot pattern in field name, using fallback "Type"',
+        correlationId
+      );
       return 'Type';
     }
 
+    // Log successful validation
+    this.debugLogger?.logValidationSuccess('frontmatter', 'fieldName', correlationId);
     return trimmed;
   }
 

@@ -130,7 +130,8 @@ export const DEFAULT_SETTINGS: ExtractorSettings = {
  * Validates and sanitizes settings object, ensuring all values are within acceptable ranges
  * Returns a new settings object with validated values
  */
-export function validateSettings(settings: Partial<ExtractorSettings>): ExtractorSettings {
+export function validateSettings(settings: Partial<ExtractorSettings>, debugLogger?: import('./debug-logger').DebugLogger): ExtractorSettings {
+  const correlationId = debugLogger ? `validate-settings-${Date.now()}` : undefined;
   const validated: ExtractorSettings = { ...DEFAULT_SETTINGS };
 
   // Validate provider
@@ -217,10 +218,25 @@ export function validateSettings(settings: Partial<ExtractorSettings>): Extracto
   // Validate debug settings
   if (typeof settings.debugMode === 'boolean') {
     validated.debugMode = settings.debugMode;
+    debugLogger?.logValidationSuccess('settings', 'debugMode', correlationId);
   }
   if (typeof settings.debugMaxEntries === 'number' && !isNaN(settings.debugMaxEntries)) {
+    const originalValue = settings.debugMaxEntries;
     validated.debugMaxEntries = Math.max(100, Math.min(10000, settings.debugMaxEntries));
+    if (originalValue !== validated.debugMaxEntries) {
+      debugLogger?.logValidation('settings', 'debugMaxEntries', originalValue, '100-10000', `Value clamped from ${originalValue} to ${validated.debugMaxEntries}`, correlationId);
+    } else {
+      debugLogger?.logValidationSuccess('settings', 'debugMaxEntries', correlationId);
+    }
+  } else if (settings.debugMaxEntries !== undefined) {
+    debugLogger?.logValidation('settings', 'debugMaxEntries', settings.debugMaxEntries, 'number between 100-10000', 'Invalid debug max entries value', correlationId);
   }
+
+  // Log overall validation summary
+  debugLogger?.log('info', 'validation', 'Settings validation completed', {
+    validatedFieldCount: Object.keys(settings).length,
+    correlationId
+  }, correlationId);
 
   return validated;
 }

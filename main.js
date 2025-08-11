@@ -69,7 +69,8 @@ var DEFAULT_SETTINGS = {
   debugMode: false,
   debugMaxEntries: 1e3
 };
-function validateSettings(settings) {
+function validateSettings(settings, debugLogger) {
+  const correlationId = debugLogger ? `validate-settings-${Date.now()}` : void 0;
   const validated = { ...DEFAULT_SETTINGS };
   if (settings.provider && ["openai", "anthropic", "ollama", "lmstudio"].includes(settings.provider)) {
     validated.provider = settings.provider;
@@ -141,18 +142,32 @@ function validateSettings(settings) {
   }
   if (typeof settings.debugMode === "boolean") {
     validated.debugMode = settings.debugMode;
+    debugLogger == null ? void 0 : debugLogger.logValidationSuccess("settings", "debugMode", correlationId);
   }
   if (typeof settings.debugMaxEntries === "number" && !isNaN(settings.debugMaxEntries)) {
+    const originalValue = settings.debugMaxEntries;
     validated.debugMaxEntries = Math.max(100, Math.min(1e4, settings.debugMaxEntries));
+    if (originalValue !== validated.debugMaxEntries) {
+      debugLogger == null ? void 0 : debugLogger.logValidation("settings", "debugMaxEntries", originalValue, "100-10000", `Value clamped from ${originalValue} to ${validated.debugMaxEntries}`, correlationId);
+    } else {
+      debugLogger == null ? void 0 : debugLogger.logValidationSuccess("settings", "debugMaxEntries", correlationId);
+    }
+  } else if (settings.debugMaxEntries !== void 0) {
+    debugLogger == null ? void 0 : debugLogger.logValidation("settings", "debugMaxEntries", settings.debugMaxEntries, "number between 100-10000", "Invalid debug max entries value", correlationId);
   }
+  debugLogger == null ? void 0 : debugLogger.log("info", "validation", "Settings validation completed", {
+    validatedFieldCount: Object.keys(settings).length,
+    correlationId
+  }, correlationId);
   return validated;
 }
 
 // src/llm-providers.ts
 var import_obsidian = require("obsidian");
 var LLMProviderManager = class {
-  constructor(settings) {
+  constructor(settings, debugLogger) {
     this.settings = settings;
+    this.debugLogger = debugLogger;
     this.serviceCache = /* @__PURE__ */ new Map();
     this.cloudModelCache = /* @__PURE__ */ new Map();
     this.apiKeyMissingNotified = /* @__PURE__ */ new Set();
@@ -169,8 +184,12 @@ var LLMProviderManager = class {
   }
   // Detect a single service instead of all services
   async detectSingleService(provider) {
-    var _a, _b;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
     const now = Date.now();
+    const correlationId = (_a = this.debugLogger) == null ? void 0 : _a.startOperation("service-detection", `Detecting service: ${provider}`, {
+      provider,
+      timestamp: now
+    });
     if (provider === "ollama") {
       const service = {
         name: "ollama",
@@ -179,21 +198,58 @@ var LLMProviderManager = class {
         models: [],
         lastChecked: now
       };
+      (_b = this.debugLogger) == null ? void 0 : _b.log("info", "service-detection", "Checking Ollama availability", {
+        provider: "ollama",
+        url: this.settings.ollamaUrl,
+        endpoint: `${this.settings.ollamaUrl}/api/tags`
+      }, correlationId);
       try {
+        const startTime = Date.now();
         const rawResponse = await (0, import_obsidian.requestUrl)({
           url: `${this.settings.ollamaUrl}/api/tags`,
           method: "GET"
         });
         const response = this.adaptRequestUrlResponse(rawResponse);
+        const connectionTime = Date.now() - startTime;
         if (response.ok) {
           const data = await response.json();
           service.available = true;
-          service.models = ((_a = data.models) == null ? void 0 : _a.map((m) => m.name)) || [];
+          service.models = ((_c = data.models) == null ? void 0 : _c.map((m) => m.name)) || [];
+          (_d = this.debugLogger) == null ? void 0 : _d.log("info", "service-detection", "Ollama service detected successfully", {
+            provider: "ollama",
+            url: this.settings.ollamaUrl,
+            available: true,
+            modelCount: service.models.length,
+            models: service.models,
+            connectionTime,
+            status: response.status
+          }, correlationId);
+        } else {
+          (_e = this.debugLogger) == null ? void 0 : _e.log("warn", "service-detection", `Ollama service responded with error: ${response.status}`, {
+            provider: "ollama",
+            url: this.settings.ollamaUrl,
+            available: false,
+            status: response.status,
+            connectionTime
+          }, correlationId);
         }
       } catch (error) {
         console.log("Ollama not available:", error.message);
+        (_f = this.debugLogger) == null ? void 0 : _f.log("warn", "service-detection", "Ollama service not available", {
+          provider: "ollama",
+          url: this.settings.ollamaUrl,
+          available: false,
+          error: error.message,
+          errorType: error.name
+        }, correlationId);
       }
       this.serviceCache.set("ollama", service);
+      (_g = this.debugLogger) == null ? void 0 : _g.log("info", "service-detection", "Ollama service cache updated", {
+        provider: "ollama",
+        available: service.available,
+        modelCount: service.models.length,
+        lastChecked: service.lastChecked
+      }, correlationId);
       return service;
     }
     if (provider === "lmstudio") {
@@ -204,23 +260,64 @@ var LLMProviderManager = class {
         models: [],
         lastChecked: now
       };
+      (_h = this.debugLogger) == null ? void 0 : _h.log("info", "service-detection", "Checking LM Studio availability", {
+        provider: "lmstudio",
+        url: this.settings.lmstudioUrl,
+        endpoint: `${this.settings.lmstudioUrl}/v1/models`
+      }, correlationId);
       try {
+        const startTime = Date.now();
         const rawResponse = await (0, import_obsidian.requestUrl)({
           url: `${this.settings.lmstudioUrl}/v1/models`,
           method: "GET"
         });
         const response = this.adaptRequestUrlResponse(rawResponse);
+        const connectionTime = Date.now() - startTime;
         if (response.ok) {
           const data = await response.json();
           service.available = true;
-          service.models = ((_b = data.data) == null ? void 0 : _b.map((m) => m.id)) || [];
+          service.models = ((_i = data.data) == null ? void 0 : _i.map((m) => m.id)) || [];
+          (_j = this.debugLogger) == null ? void 0 : _j.log("info", "service-detection", "LM Studio service detected successfully", {
+            provider: "lmstudio",
+            url: this.settings.lmstudioUrl,
+            available: true,
+            modelCount: service.models.length,
+            models: service.models,
+            connectionTime,
+            status: response.status
+          }, correlationId);
+        } else {
+          (_k = this.debugLogger) == null ? void 0 : _k.log("warn", "service-detection", `LM Studio service responded with error: ${response.status}`, {
+            provider: "lmstudio",
+            url: this.settings.lmstudioUrl,
+            available: false,
+            status: response.status,
+            connectionTime
+          }, correlationId);
         }
       } catch (error) {
         console.log("LM Studio not available:", error.message);
+        (_l = this.debugLogger) == null ? void 0 : _l.log("warn", "service-detection", "LM Studio service not available", {
+          provider: "lmstudio",
+          url: this.settings.lmstudioUrl,
+          available: false,
+          error: error.message,
+          errorType: error.name
+        }, correlationId);
       }
       this.serviceCache.set("lmstudio", service);
+      (_m = this.debugLogger) == null ? void 0 : _m.log("info", "service-detection", "LM Studio service cache updated", {
+        provider: "lmstudio",
+        available: service.available,
+        modelCount: service.models.length,
+        lastChecked: service.lastChecked
+      }, correlationId);
       return service;
     }
+    (_n = this.debugLogger) == null ? void 0 : _n.log("warn", "service-detection", `Unknown provider requested: ${provider}`, {
+      provider,
+      supportedProviders: ["ollama", "lmstudio"]
+    }, correlationId);
     return null;
   }
   // Legacy method for backward compatibility
@@ -234,12 +331,21 @@ var LLMProviderManager = class {
   }
   // Provider-agnostic LLM call with fallback support
   async callLLM(systemPrompt, userPrompt) {
+    var _a, _b, _c, _d, _e, _f, _g;
     const provider = this.settings.provider;
+    const correlationId = (_a = this.debugLogger) == null ? void 0 : _a.startOperation("llm-call", `Starting LLM call with provider: ${provider}`, {
+      provider,
+      model: this.settings.model
+    });
     if (["openai", "anthropic"].includes(provider) && !this.settings.apiKey) {
       const notificationKey = `${provider}-no-api-key`;
       if (!this.apiKeyMissingNotified.has(notificationKey)) {
         console.warn(`Task Extractor: ${provider.toUpperCase()} API key not configured in plugin settings`);
         this.apiKeyMissingNotified.add(notificationKey);
+        (_b = this.debugLogger) == null ? void 0 : _b.log("error", "llm-call", `API key missing for ${provider}`, {
+          provider,
+          notificationKey
+        }, correlationId);
       }
       return null;
     }
@@ -247,63 +353,114 @@ var LLMProviderManager = class {
       this.apiKeyMissingNotified.delete(`${provider}-no-api-key`);
     }
     for (let attempt = 0; attempt < this.settings.retries; attempt++) {
+      const startTime = Date.now();
+      (_c = this.debugLogger) == null ? void 0 : _c.log("info", "llm-call", `Attempt ${attempt + 1}/${this.settings.retries} for ${provider}`, {
+        provider,
+        model: this.settings.model,
+        retryAttempt: attempt + 1
+      }, correlationId);
       try {
         let result = null;
         switch (provider) {
           case "openai":
-            result = await this.callOpenAI(systemPrompt, userPrompt);
+            result = await this.callOpenAI(systemPrompt, userPrompt, correlationId);
             break;
           case "anthropic":
-            result = await this.callAnthropic(systemPrompt, userPrompt);
+            result = await this.callAnthropic(systemPrompt, userPrompt, correlationId);
             break;
           case "ollama":
-            result = await this.callOllama(systemPrompt, userPrompt);
+            result = await this.callOllama(systemPrompt, userPrompt, correlationId);
             break;
           case "lmstudio":
-            result = await this.callLMStudio(systemPrompt, userPrompt);
+            result = await this.callLMStudio(systemPrompt, userPrompt, correlationId);
             break;
           default:
             throw new Error(`Unsupported provider: ${provider}`);
         }
-        if (result)
+        if (result) {
+          const processingTime = Date.now() - startTime;
+          (_d = this.debugLogger) == null ? void 0 : _d.log("info", "llm-call", `LLM call successful on attempt ${attempt + 1}`, {
+            provider,
+            model: this.settings.model,
+            processingTime,
+            retryAttempt: attempt + 1,
+            responseLength: result.length
+          }, correlationId);
           return result;
+        }
       } catch (error) {
+        const processingTime = Date.now() - startTime;
         console.warn(`Attempt ${attempt + 1} failed for ${provider}:`, error.message);
+        (_e = this.debugLogger) == null ? void 0 : _e.log("warn", "llm-call", `Attempt ${attempt + 1} failed for ${provider}`, {
+          provider,
+          model: this.settings.model,
+          error: error.message,
+          processingTime,
+          retryAttempt: attempt + 1
+        }, correlationId);
         if (attempt === this.settings.retries - 1) {
           if (["ollama", "lmstudio"].includes(provider)) {
-            return await this.tryLocalFallback(systemPrompt, userPrompt);
+            (_f = this.debugLogger) == null ? void 0 : _f.log("info", "llm-call", `All attempts failed, trying local fallback`, {
+              provider,
+              totalAttempts: this.settings.retries
+            }, correlationId);
+            return await this.tryLocalFallback(systemPrompt, userPrompt, correlationId);
           }
         } else {
-          await this.delay(1e3 * (attempt + 1));
+          const backoffDelay = 1e3 * (attempt + 1);
+          (_g = this.debugLogger) == null ? void 0 : _g.log("info", "llm-call", `Waiting ${backoffDelay}ms before retry`, {
+            provider,
+            backoffDelay,
+            nextAttempt: attempt + 2
+          }, correlationId);
+          await this.delay(backoffDelay);
         }
       }
     }
     return null;
   }
-  async tryLocalFallback(systemPrompt, userPrompt) {
+  async tryLocalFallback(systemPrompt, userPrompt, correlationId) {
+    var _a, _b, _c, _d;
     const availableServices = this.getAvailableServices();
+    (_a = this.debugLogger) == null ? void 0 : _a.log("info", "llm-call", `Trying local fallback with ${availableServices.length} available services`, {
+      availableServices: availableServices.map((s) => s.name),
+      primaryProvider: this.settings.provider
+    }, correlationId);
     for (const service of availableServices) {
       if (service.name === this.settings.provider)
         continue;
       try {
         console.log(`Trying fallback to ${service.name}`);
+        (_b = this.debugLogger) == null ? void 0 : _b.log("info", "llm-call", `Attempting fallback to ${service.name}`, {
+          fallbackProvider: service.name,
+          availableModels: service.models
+        }, correlationId);
         if (service.name === "ollama") {
-          return await this.callOllama(systemPrompt, userPrompt);
+          return await this.callOllama(systemPrompt, userPrompt, correlationId);
         } else if (service.name === "lmstudio") {
-          return await this.callLMStudio(systemPrompt, userPrompt);
+          return await this.callLMStudio(systemPrompt, userPrompt, correlationId);
         }
       } catch (error) {
         console.warn(`Fallback to ${service.name} failed:`, error.message);
+        (_c = this.debugLogger) == null ? void 0 : _c.log("warn", "llm-call", `Fallback to ${service.name} failed`, {
+          fallbackProvider: service.name,
+          error: error.message
+        }, correlationId);
       }
     }
     console.warn("Task Extractor: All LLM services failed. Check your configuration.");
+    (_d = this.debugLogger) == null ? void 0 : _d.log("error", "llm-call", "All LLM services failed including fallbacks", {
+      primaryProvider: this.settings.provider,
+      availableServices: availableServices.map((s) => s.name)
+    }, correlationId);
     return null;
   }
-  async callOpenAI(systemPrompt, userPrompt) {
-    var _a, _b, _c;
+  async callOpenAI(systemPrompt, userPrompt, correlationId) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
     const endpoint = "https://api.openai.com/v1/chat/completions";
+    const model = this.settings.model || "gpt-4o-mini";
     const body = {
-      model: this.settings.model || "gpt-4o-mini",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
@@ -311,7 +468,19 @@ var LLMProviderManager = class {
       temperature: this.settings.temperature,
       max_tokens: this.settings.maxTokens
     };
+    const maskedApiKey = this.settings.apiKey ? `...${this.settings.apiKey.slice(-4)}` : "none";
+    (_a = this.debugLogger) == null ? void 0 : _a.log("info", "llm-call", "Sending OpenAI API request", {
+      provider: "openai",
+      model,
+      endpoint,
+      apiKey: maskedApiKey,
+      requestPayload: {
+        ...body,
+        messages: body.messages.map((m) => ({ role: m.role, contentLength: m.content.length }))
+      }
+    }, correlationId);
     try {
+      const startTime = Date.now();
       const rawResp = await (0, import_obsidian.requestUrl)({
         url: endpoint,
         method: "POST",
@@ -322,22 +491,74 @@ var LLMProviderManager = class {
         body: JSON.stringify(body)
       });
       const resp = this.adaptRequestUrlResponse(rawResp);
+      const processingTime = Date.now() - startTime;
       if (!resp.ok) {
         const text = await resp.text();
         console.error("OpenAI error", resp.status, text);
+        (_b = this.debugLogger) == null ? void 0 : _b.log("error", "llm-call", `OpenAI API error: ${resp.status}`, {
+          provider: "openai",
+          model,
+          status: resp.status,
+          statusText: resp.statusText,
+          error: text,
+          processingTime
+        }, correlationId);
         throw new Error(`OpenAI API error: ${resp.status} ${resp.statusText}`);
       }
       const json = await resp.json();
-      return ((_c = (_b = (_a = json == null ? void 0 : json.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content) || null;
+      const content = ((_e = (_d = (_c = json == null ? void 0 : json.choices) == null ? void 0 : _c[0]) == null ? void 0 : _d.message) == null ? void 0 : _e.content) || null;
+      const tokenUsage = ((_f = json == null ? void 0 : json.usage) == null ? void 0 : _f.total_tokens) || 0;
+      (_h = this.debugLogger) == null ? void 0 : _h.log("info", "llm-call", "OpenAI API response received", {
+        provider: "openai",
+        model,
+        status: resp.status,
+        tokenUsage,
+        responseLength: (content == null ? void 0 : content.length) || 0,
+        processingTime,
+        responseData: {
+          choices: ((_g = json == null ? void 0 : json.choices) == null ? void 0 : _g.length) || 0,
+          usage: json == null ? void 0 : json.usage
+        }
+      }, correlationId);
+      return content;
     } catch (e) {
       console.error("callOpenAI error", e);
+      (_i = this.debugLogger) == null ? void 0 : _i.log("error", "llm-call", "OpenAI API call failed", {
+        provider: "openai",
+        model,
+        error: e.message
+      }, correlationId);
       throw e;
     }
   }
-  async callAnthropic(systemPrompt, userPrompt) {
-    var _a, _b;
+  async callAnthropic(systemPrompt, userPrompt, correlationId) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
     const endpoint = "https://api.anthropic.com/v1/messages";
+    const model = this.settings.model || "claude-3-sonnet-20240229";
+    const requestBody = {
+      model,
+      max_tokens: this.settings.maxTokens,
+      temperature: this.settings.temperature,
+      system: systemPrompt,
+      messages: [{
+        role: "user",
+        content: userPrompt
+      }]
+    };
+    const maskedApiKey = this.settings.apiKey ? `...${this.settings.apiKey.slice(-4)}` : "none";
+    (_a = this.debugLogger) == null ? void 0 : _a.log("info", "llm-call", "Sending Anthropic API request", {
+      provider: "anthropic",
+      model,
+      endpoint,
+      apiKey: maskedApiKey,
+      requestPayload: {
+        ...requestBody,
+        system: `${systemPrompt.length} chars`,
+        messages: requestBody.messages.map((m) => ({ role: m.role, contentLength: m.content.length }))
+      }
+    }, correlationId);
     try {
+      const startTime = Date.now();
       const rawResp = await (0, import_obsidian.requestUrl)({
         url: endpoint,
         method: "POST",
@@ -346,80 +567,173 @@ var LLMProviderManager = class {
           "Content-Type": "application/json",
           "anthropic-version": "2023-06-01"
         },
-        body: JSON.stringify({
-          model: this.settings.model || "claude-3-sonnet-20240229",
-          max_tokens: this.settings.maxTokens,
-          temperature: this.settings.temperature,
-          system: systemPrompt,
-          messages: [{
-            role: "user",
-            content: userPrompt
-          }]
-        })
+        body: JSON.stringify(requestBody)
       });
       const resp = this.adaptRequestUrlResponse(rawResp);
+      const processingTime = Date.now() - startTime;
       if (!resp.ok) {
         const text = await resp.text();
         console.error("Anthropic error", resp.status, text);
+        (_b = this.debugLogger) == null ? void 0 : _b.log("error", "llm-call", `Anthropic API error: ${resp.status}`, {
+          provider: "anthropic",
+          model,
+          status: resp.status,
+          statusText: resp.statusText,
+          error: text,
+          processingTime
+        }, correlationId);
         throw new Error(`Anthropic API error: ${resp.status} ${resp.statusText}`);
       }
       const json = await resp.json();
-      return ((_b = (_a = json == null ? void 0 : json.content) == null ? void 0 : _a[0]) == null ? void 0 : _b.text) || null;
+      const content = ((_d = (_c = json == null ? void 0 : json.content) == null ? void 0 : _c[0]) == null ? void 0 : _d.text) || null;
+      const tokenUsage = ((_e = json == null ? void 0 : json.usage) == null ? void 0 : _e.input_tokens) + ((_f = json == null ? void 0 : json.usage) == null ? void 0 : _f.output_tokens) || 0;
+      (_h = this.debugLogger) == null ? void 0 : _h.log("info", "llm-call", "Anthropic API response received", {
+        provider: "anthropic",
+        model,
+        status: resp.status,
+        tokenUsage,
+        responseLength: (content == null ? void 0 : content.length) || 0,
+        processingTime,
+        responseData: {
+          contentBlocks: ((_g = json == null ? void 0 : json.content) == null ? void 0 : _g.length) || 0,
+          usage: json == null ? void 0 : json.usage
+        }
+      }, correlationId);
+      return content;
     } catch (e) {
       console.error("callAnthropic error", e);
+      (_i = this.debugLogger) == null ? void 0 : _i.log("error", "llm-call", "Anthropic API call failed", {
+        provider: "anthropic",
+        model,
+        error: e.message
+      }, correlationId);
       throw e;
     }
   }
-  async callOllama(systemPrompt, userPrompt) {
-    var _a;
+  async callOllama(systemPrompt, userPrompt, correlationId) {
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const service = await this.getService("ollama");
     if (!(service == null ? void 0 : service.available) || !service.models.length) {
+      (_b = this.debugLogger) == null ? void 0 : _b.log("error", "llm-call", "Ollama service not available or no models loaded", {
+        provider: "ollama",
+        serviceAvailable: (service == null ? void 0 : service.available) || false,
+        modelCount: ((_a = service == null ? void 0 : service.models) == null ? void 0 : _a.length) || 0,
+        url: this.settings.ollamaUrl
+      }, correlationId);
       throw new Error("Ollama service not available or no models loaded");
     }
     const model = service.models.includes(this.settings.model) ? this.settings.model : service.models[0];
     const endpoint = `${this.settings.ollamaUrl}/api/chat`;
+    const requestBody = {
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      stream: false,
+      options: {
+        temperature: this.settings.temperature,
+        num_predict: this.settings.maxTokens
+      }
+    };
+    (_c = this.debugLogger) == null ? void 0 : _c.log("info", "llm-call", "Sending Ollama API request", {
+      provider: "ollama",
+      model,
+      endpoint,
+      url: this.settings.ollamaUrl,
+      availableModels: service.models,
+      requestPayload: {
+        ...requestBody,
+        messages: requestBody.messages.map((m) => ({ role: m.role, contentLength: m.content.length }))
+      }
+    }, correlationId);
     try {
+      const startTime = Date.now();
       const rawResp = await (0, import_obsidian.requestUrl)({
         url: endpoint,
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          stream: false,
-          options: {
-            temperature: this.settings.temperature,
-            num_predict: this.settings.maxTokens
-          }
-        })
+        body: JSON.stringify(requestBody)
       });
       const resp = this.adaptRequestUrlResponse(rawResp);
+      const processingTime = Date.now() - startTime;
       if (!resp.ok) {
         const text = await resp.text();
         console.error("Ollama error", resp.status, text);
+        (_d = this.debugLogger) == null ? void 0 : _d.log("error", "llm-call", `Ollama API error: ${resp.status}`, {
+          provider: "ollama",
+          model,
+          status: resp.status,
+          statusText: resp.statusText,
+          error: text,
+          processingTime,
+          url: this.settings.ollamaUrl
+        }, correlationId);
         throw new Error(`Ollama API error: ${resp.status} ${resp.statusText}`);
       }
       const json = await resp.json();
-      return ((_a = json == null ? void 0 : json.message) == null ? void 0 : _a.content) || null;
+      const content = ((_e = json == null ? void 0 : json.message) == null ? void 0 : _e.content) || null;
+      (_g = this.debugLogger) == null ? void 0 : _g.log("info", "llm-call", "Ollama API response received", {
+        provider: "ollama",
+        model,
+        status: resp.status,
+        responseLength: (content == null ? void 0 : content.length) || 0,
+        processingTime,
+        responseData: {
+          hasMessage: !!(json == null ? void 0 : json.message),
+          messageRole: (_f = json == null ? void 0 : json.message) == null ? void 0 : _f.role
+        }
+      }, correlationId);
+      return content;
     } catch (e) {
       console.error("callOllama error", e);
+      (_h = this.debugLogger) == null ? void 0 : _h.log("error", "llm-call", "Ollama API call failed", {
+        provider: "ollama",
+        model,
+        error: e.message,
+        url: this.settings.ollamaUrl
+      }, correlationId);
       throw e;
     }
   }
-  async callLMStudio(systemPrompt, userPrompt) {
-    var _a, _b, _c;
+  async callLMStudio(systemPrompt, userPrompt, correlationId) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
     const service = await this.getService("lmstudio");
     if (!(service == null ? void 0 : service.available) || !service.models.length) {
+      (_b = this.debugLogger) == null ? void 0 : _b.log("error", "llm-call", "LM Studio service not available or no models loaded", {
+        provider: "lmstudio",
+        serviceAvailable: (service == null ? void 0 : service.available) || false,
+        modelCount: ((_a = service == null ? void 0 : service.models) == null ? void 0 : _a.length) || 0,
+        url: this.settings.lmstudioUrl
+      }, correlationId);
       throw new Error("LM Studio service not available or no models loaded");
     }
     const model = service.models.includes(this.settings.model) ? this.settings.model : service.models[0];
     const endpoint = `${this.settings.lmstudioUrl}/v1/chat/completions`;
+    const requestBody = {
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      temperature: this.settings.temperature,
+      max_tokens: this.settings.maxTokens
+    };
+    (_c = this.debugLogger) == null ? void 0 : _c.log("info", "llm-call", "Sending LM Studio API request", {
+      provider: "lmstudio",
+      model,
+      endpoint,
+      url: this.settings.lmstudioUrl,
+      availableModels: service.models,
+      requestPayload: {
+        ...requestBody,
+        messages: requestBody.messages.map((m) => ({ role: m.role, contentLength: m.content.length }))
+      }
+    }, correlationId);
     try {
+      const startTime = Date.now();
       const rawResp = await (0, import_obsidian.requestUrl)({
         url: endpoint,
         method: "POST",
@@ -428,71 +742,168 @@ var LLMProviderManager = class {
           // Placeholder auth
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          temperature: this.settings.temperature,
-          max_tokens: this.settings.maxTokens
-        })
+        body: JSON.stringify(requestBody)
       });
       const resp = this.adaptRequestUrlResponse(rawResp);
+      const processingTime = Date.now() - startTime;
       if (!resp.ok) {
         const text = await resp.text();
         console.error("LM Studio error", resp.status, text);
+        (_d = this.debugLogger) == null ? void 0 : _d.log("error", "llm-call", `LM Studio API error: ${resp.status}`, {
+          provider: "lmstudio",
+          model,
+          status: resp.status,
+          statusText: resp.statusText,
+          error: text,
+          processingTime,
+          url: this.settings.lmstudioUrl
+        }, correlationId);
         throw new Error(`LM Studio API error: ${resp.status} ${resp.statusText}`);
       }
       const json = await resp.json();
-      return ((_c = (_b = (_a = json == null ? void 0 : json.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content) || null;
+      const content = ((_g = (_f = (_e = json == null ? void 0 : json.choices) == null ? void 0 : _e[0]) == null ? void 0 : _f.message) == null ? void 0 : _g.content) || null;
+      const tokenUsage = ((_h = json == null ? void 0 : json.usage) == null ? void 0 : _h.total_tokens) || 0;
+      (_j = this.debugLogger) == null ? void 0 : _j.log("info", "llm-call", "LM Studio API response received", {
+        provider: "lmstudio",
+        model,
+        status: resp.status,
+        tokenUsage,
+        responseLength: (content == null ? void 0 : content.length) || 0,
+        processingTime,
+        responseData: {
+          choices: ((_i = json == null ? void 0 : json.choices) == null ? void 0 : _i.length) || 0,
+          usage: json == null ? void 0 : json.usage
+        }
+      }, correlationId);
+      return content;
     } catch (e) {
       console.error("callLMStudio error", e);
+      (_k = this.debugLogger) == null ? void 0 : _k.log("error", "llm-call", "LM Studio API call failed", {
+        provider: "lmstudio",
+        model,
+        error: e.message,
+        url: this.settings.lmstudioUrl
+      }, correlationId);
       throw e;
     }
   }
   // Fetch available models for cloud providers
   async fetchCloudModels(provider) {
+    var _a, _b, _c, _d, _e;
+    const correlationId = (_a = this.debugLogger) == null ? void 0 : _a.startOperation("service-detection", `Fetching cloud models for provider: ${provider}`, {
+      provider,
+      hasApiKey: !!this.settings.apiKey
+    });
     if (!this.settings.apiKey) {
+      (_b = this.debugLogger) == null ? void 0 : _b.log("warn", "service-detection", `No API key available for ${provider}`, {
+        provider
+      }, correlationId);
       return [];
     }
     const cacheKey = `${provider}-${this.settings.apiKey.slice(-4)}`;
     if (this.cloudModelCache.has(cacheKey)) {
-      return this.cloudModelCache.get(cacheKey) || [];
+      const cachedModels = this.cloudModelCache.get(cacheKey) || [];
+      (_c = this.debugLogger) == null ? void 0 : _c.log("info", "service-detection", `Using cached models for ${provider}`, {
+        provider,
+        cacheKey: cacheKey.replace(/-.*$/, "-****"),
+        // Mask API key in logs
+        modelCount: cachedModels.length,
+        models: cachedModels
+      }, correlationId);
+      return cachedModels;
     }
+    (_d = this.debugLogger) == null ? void 0 : _d.log("info", "service-detection", `Cache miss, fetching fresh models for ${provider}`, {
+      provider,
+      cacheKey: cacheKey.replace(/-.*$/, "-****")
+    }, correlationId);
     try {
       if (provider === "openai") {
-        return await this.fetchOpenAIModels();
+        return await this.fetchOpenAIModels(correlationId);
       } else if (provider === "anthropic") {
-        return await this.fetchAnthropicModels();
+        return await this.fetchAnthropicModels(correlationId);
       }
     } catch (error) {
       console.warn(`Failed to fetch ${provider} models:`, error.message);
-      return this.getDefaultModels(provider);
+      const defaultModels = this.getDefaultModels(provider);
+      (_e = this.debugLogger) == null ? void 0 : _e.log("error", "service-detection", `Failed to fetch ${provider} models, using defaults`, {
+        provider,
+        error: error.message,
+        errorType: error.name,
+        defaultModels,
+        defaultModelCount: defaultModels.length
+      }, correlationId);
+      return defaultModels;
     }
     return [];
   }
-  async fetchOpenAIModels() {
-    var _a, _b, _c;
-    const rawResponse = await (0, import_obsidian.requestUrl)({
-      url: "https://api.openai.com/v1/models",
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${this.settings.apiKey}`,
-        "Content-Type": "application/json"
+  async fetchOpenAIModels(correlationId) {
+    var _a, _b, _c, _d, _e, _f, _g;
+    const endpoint = "https://api.openai.com/v1/models";
+    const maskedApiKey = this.settings.apiKey ? `...${this.settings.apiKey.slice(-4)}` : "none";
+    (_a = this.debugLogger) == null ? void 0 : _a.log("info", "service-detection", "Fetching OpenAI models", {
+      provider: "openai",
+      endpoint,
+      apiKey: maskedApiKey
+    }, correlationId);
+    try {
+      const startTime = Date.now();
+      const rawResponse = await (0, import_obsidian.requestUrl)({
+        url: endpoint,
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${this.settings.apiKey}`,
+          "Content-Type": "application/json"
+        }
+      });
+      const response = this.adaptRequestUrlResponse(rawResponse);
+      const processingTime = Date.now() - startTime;
+      if (!response.ok) {
+        (_b = this.debugLogger) == null ? void 0 : _b.log("error", "service-detection", `OpenAI models API error: ${response.status}`, {
+          provider: "openai",
+          endpoint,
+          status: response.status,
+          statusText: response.statusText,
+          processingTime
+        }, correlationId);
+        throw new Error(`OpenAI API error: ${response.status}`);
       }
-    });
-    const response = this.adaptRequestUrlResponse(rawResponse);
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+      const data = await response.json();
+      const allModels = data.data || [];
+      const models = ((_d = (_c = allModels == null ? void 0 : allModels.filter((model) => model.id.includes("gpt") && !model.id.includes("instruct"))) == null ? void 0 : _c.map((model) => model.id)) == null ? void 0 : _d.sort()) || [];
+      (_e = this.debugLogger) == null ? void 0 : _e.log("info", "service-detection", "OpenAI models fetched successfully", {
+        provider: "openai",
+        endpoint,
+        status: response.status,
+        processingTime,
+        totalModelsReceived: allModels.length,
+        filteredModelCount: models.length,
+        models
+      }, correlationId);
+      const cacheKey = `openai-${this.settings.apiKey.slice(-4)}`;
+      this.cloudModelCache.set(cacheKey, models);
+      (_f = this.debugLogger) == null ? void 0 : _f.log("info", "service-detection", "OpenAI models cached successfully", {
+        provider: "openai",
+        cacheKey: cacheKey.replace(/-.*$/, "-****"),
+        // Mask API key in logs
+        modelCount: models.length
+      }, correlationId);
+      return models.length > 0 ? models : this.getDefaultModels("openai");
+    } catch (e) {
+      (_g = this.debugLogger) == null ? void 0 : _g.log("error", "service-detection", "OpenAI models fetch failed", {
+        provider: "openai",
+        endpoint,
+        error: e.message,
+        errorType: e.name
+      }, correlationId);
+      throw e;
     }
-    const data = await response.json();
-    const models = ((_c = (_b = (_a = data.data) == null ? void 0 : _a.filter((model) => model.id.includes("gpt") && !model.id.includes("instruct"))) == null ? void 0 : _b.map((model) => model.id)) == null ? void 0 : _c.sort()) || [];
-    const cacheKey = `openai-${this.settings.apiKey.slice(-4)}`;
-    this.cloudModelCache.set(cacheKey, models);
-    return models.length > 0 ? models : this.getDefaultModels("openai");
   }
-  async fetchAnthropicModels() {
+  async fetchAnthropicModels(correlationId) {
+    var _a, _b, _c;
+    (_a = this.debugLogger) == null ? void 0 : _a.log("info", "service-detection", "Fetching Anthropic models (using known model list)", {
+      provider: "anthropic",
+      reason: "no-public-models-api"
+    }, correlationId);
     const knownModels = [
       "claude-3-5-sonnet-20241022",
       "claude-3-5-haiku-20241022",
@@ -500,8 +911,20 @@ var LLMProviderManager = class {
       "claude-3-sonnet-20240229",
       "claude-3-haiku-20240307"
     ];
+    (_b = this.debugLogger) == null ? void 0 : _b.log("info", "service-detection", "Anthropic models retrieved successfully", {
+      provider: "anthropic",
+      modelCount: knownModels.length,
+      models: knownModels,
+      source: "hardcoded-known-models"
+    }, correlationId);
     const cacheKey = `anthropic-${this.settings.apiKey.slice(-4)}`;
     this.cloudModelCache.set(cacheKey, knownModels);
+    (_c = this.debugLogger) == null ? void 0 : _c.log("info", "service-detection", "Anthropic models cached successfully", {
+      provider: "anthropic",
+      cacheKey: cacheKey.replace(/-.*$/, "-****"),
+      // Mask API key in logs
+      modelCount: knownModels.length
+    }, correlationId);
     return knownModels;
   }
   getDefaultModels(provider) {
@@ -594,7 +1017,7 @@ var TaskProcessor = class {
   }
   // When a file is created or modified
   async onFileChanged(file) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e, _f, _g;
     if (file.extension !== "md") {
       this.log("info", "file-processing", "File skipped: not a markdown file", {
         filePath: file.path,
@@ -657,8 +1080,20 @@ var TaskProcessor = class {
         }, correlationId);
         return;
       }
-      const frontmatterField = this.validateFrontmatterField(this.settings.triggerFrontmatterField);
+      const frontmatterField = this.validateFrontmatterField(this.settings.triggerFrontmatterField, correlationId);
       const typeRaw = this.getFrontmatterValue(front, frontmatterField) || "";
+      if (typeRaw) {
+        (_a = this.debugLogger) == null ? void 0 : _a.logValidationSuccess("frontmatter", `${frontmatterField}`, correlationId);
+      } else {
+        (_b = this.debugLogger) == null ? void 0 : _b.logValidation(
+          "frontmatter",
+          frontmatterField,
+          typeRaw,
+          "non-empty value",
+          "Frontmatter field is empty or missing",
+          correlationId
+        );
+      }
       const type = ("" + typeRaw).toLowerCase();
       const accepted = this.settings.triggerTypes.map((t) => t.toLowerCase());
       this.log("info", "file-processing", "Checking trigger type match", {
@@ -674,7 +1109,17 @@ var TaskProcessor = class {
           typeFound: type,
           acceptedTypes: accepted
         }, correlationId);
+        (_c = this.debugLogger) == null ? void 0 : _c.logValidation(
+          "frontmatter",
+          `${frontmatterField}.triggerMatch`,
+          type,
+          `one of: ${accepted.join(", ")}`,
+          `Value '${type}' does not match any trigger types`,
+          correlationId
+        );
         return;
+      } else {
+        (_d = this.debugLogger) == null ? void 0 : _d.logValidationSuccess("frontmatter", `${frontmatterField}.triggerMatch`, correlationId);
       }
       if (!this.settings.ownerName || this.settings.ownerName.trim().length === 0) {
         console.warn("TaskExtractor: Owner name not configured, skipping processing");
@@ -694,7 +1139,7 @@ var TaskProcessor = class {
       if (extraction && extraction.found) {
         this.log("info", "file-processing", "Tasks found, proceeding to task creation", {
           filePath: file.path,
-          tasksFound: "tasks" in extraction ? (_a = extraction.tasks) == null ? void 0 : _a.length : 1
+          tasksFound: "tasks" in extraction ? (_e = extraction.tasks) == null ? void 0 : _e.length : 1
         }, correlationId);
         await this.handleTaskExtraction(extraction, file, correlationId);
       } else {
@@ -708,7 +1153,7 @@ var TaskProcessor = class {
       }
       this.log("info", "file-processing", "File processing completed successfully", {
         filePath: file.path,
-        processingTime: Date.now() - (((_b = this.processingQueue.get(file.path)) == null ? void 0 : _b.startTime) || Date.now())
+        processingTime: Date.now() - (((_f = this.processingQueue.get(file.path)) == null ? void 0 : _f.startTime) || Date.now())
       }, correlationId);
     } catch (err) {
       console.error("TaskExtractor error", err);
@@ -717,7 +1162,7 @@ var TaskProcessor = class {
         filePath: file.path,
         error: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : void 0,
-        processingTime: Date.now() - (((_c = this.processingQueue.get(file.path)) == null ? void 0 : _c.startTime) || Date.now())
+        processingTime: Date.now() - (((_g = this.processingQueue.get(file.path)) == null ? void 0 : _g.startTime) || Date.now())
       }, correlationId);
       if (this.processingQueue.has(file.path)) {
         this.processingQueue.get(file.path).status = "failed";
@@ -1295,21 +1740,47 @@ ${content}
    * Validates frontmatter field name with graceful fallback to "Type"
    * Ensures the field name is valid for YAML and safe to use
    */
-  validateFrontmatterField(fieldName) {
+  validateFrontmatterField(fieldName, correlationId) {
+    var _a, _b, _c, _d;
     if (!fieldName || typeof fieldName !== "string" || fieldName.trim().length === 0) {
       console.warn('TaskExtractor: Empty frontmatter field name, falling back to "Type"');
+      (_a = this.debugLogger) == null ? void 0 : _a.logValidation(
+        "frontmatter",
+        "fieldName",
+        fieldName,
+        "non-empty string",
+        'Empty frontmatter field name, using fallback "Type"',
+        correlationId
+      );
       return "Type";
     }
     const trimmed = fieldName.trim();
     const yamlKeyPattern = /^[a-zA-Z_][a-zA-Z0-9_.-]*$/;
     if (!yamlKeyPattern.test(trimmed)) {
       console.warn(`TaskExtractor: Invalid frontmatter field name "${trimmed}", falling back to "Type"`);
+      (_b = this.debugLogger) == null ? void 0 : _b.logValidation(
+        "frontmatter",
+        "fieldName",
+        trimmed,
+        "valid YAML key pattern (^[a-zA-Z_][a-zA-Z0-9_.-]*$)",
+        'Invalid YAML key format, using fallback "Type"',
+        correlationId
+      );
       return "Type";
     }
     if (trimmed.includes("..") || trimmed.startsWith(".") || trimmed.endsWith(".")) {
       console.warn(`TaskExtractor: Problematic frontmatter field name "${trimmed}", falling back to "Type"`);
+      (_c = this.debugLogger) == null ? void 0 : _c.logValidation(
+        "frontmatter",
+        "fieldName",
+        trimmed,
+        "valid YAML key without problematic dot patterns",
+        'Problematic dot pattern in field name, using fallback "Type"',
+        correlationId
+      );
       return "Type";
     }
+    (_d = this.debugLogger) == null ? void 0 : _d.logValidationSuccess("frontmatter", "fieldName", correlationId);
     return trimmed;
   }
   // Enhanced cleanup method with processing queue management
@@ -1763,6 +2234,419 @@ var ExtractorSettingTab = class extends import_obsidian3.PluginSettingTab {
   }
 };
 
+// src/debug-logger.ts
+var DebugLogger = class {
+  constructor(config) {
+    this.logs = [];
+    this.correlationCounter = 0;
+    this.logFailureCount = 0;
+    this.maxLogFailures = 5;
+    // Performance optimization fields
+    this.entryPool = [];
+    this.maxPoolSize = 100;
+    this.lastCleanupTime = 0;
+    this.cleanupInterval = 3e4;
+    // 30 seconds
+    this.logCount = 0;
+    this.totalLogTime = 0;
+    this.config = config;
+  }
+  /**
+   * Log a debug entry with specified level, category, and optional data
+   * Optimized with object pooling and memory management
+   */
+  log(level, category, message, data, correlationId) {
+    if (!this.config.enabled) {
+      return;
+    }
+    this.safeLog(() => {
+      const startTime = performance.now();
+      const entry = this.getPooledEntry();
+      entry.timestamp = Date.now();
+      entry.level = level;
+      entry.category = category;
+      entry.message = message;
+      entry.correlationId = correlationId;
+      entry.data = data ? this.cloneData(data) : void 0;
+      entry.errorContext = void 0;
+      this.logs.push(entry);
+      this.logCount++;
+      this.totalLogTime += performance.now() - startTime;
+      this.performMemoryManagement();
+    });
+  }
+  /**
+   * Start a new operation and return a correlation ID for tracking related log entries
+   */
+  startOperation(category, message, data) {
+    const correlationId = `op-${++this.correlationCounter}-${Date.now()}`;
+    this.log("info", category, message, data, correlationId);
+    return correlationId;
+  }
+  /**
+   * Get all current log entries
+   */
+  getLogs() {
+    return [...this.logs];
+  }
+  /**
+   * Clear all log entries and return them to pool
+   */
+  clearLogs() {
+    this.returnEntriesToPool(this.logs);
+    this.logs = [];
+    this.correlationCounter = 0;
+  }
+  /**
+   * Export logs as formatted text string with optimized serialization
+   */
+  exportLogs() {
+    if (this.logs.length === 0) {
+      return "No debug logs available.";
+    }
+    const parts = [];
+    parts.push("=== Obsidian Task Extractor Debug Logs ===\n");
+    parts.push(`Generated: ${new Date().toISOString()}
+`);
+    parts.push(`Total Entries: ${this.logs.length}
+`);
+    parts.push("");
+    const lines = new Array(this.logs.length * 3);
+    let lineIndex = 0;
+    for (const entry of this.logs) {
+      const timestamp = new Date(entry.timestamp).toISOString();
+      const correlationPart = entry.correlationId ? ` [${entry.correlationId}]` : "";
+      lines[lineIndex++] = `[${timestamp}] ${entry.level.toUpperCase()} ${entry.category}${correlationPart}: ${entry.message}`;
+      if (entry.data && Object.keys(entry.data).length > 0) {
+        try {
+          const serializedData = this.optimizedStringify(entry.data);
+          lines[lineIndex++] = `  Data: ${serializedData.split("\n").join("\n  ")}`;
+        } catch (error) {
+          lines[lineIndex++] = "  Data: [Serialization Error]";
+        }
+      }
+      lines[lineIndex++] = "";
+    }
+    lines.length = lineIndex;
+    parts.push(lines.join("\n"));
+    return parts.join("\n");
+  }
+  /**
+   * Remove old entries to maintain memory limits with automatic rotation
+   * Keeps the most recent entries up to maxEntries limit
+   */
+  cleanup() {
+    if (this.logs.length > this.config.maxEntries) {
+      const entriesToRemove = this.logs.length - this.config.maxEntries;
+      const removedEntries = this.logs.splice(0, entriesToRemove);
+      this.returnEntriesToPool(removedEntries);
+    }
+  }
+  /**
+   * Update the logger configuration with performance optimizations
+   */
+  updateConfig(config) {
+    this.config = { ...this.config, ...config };
+    if (!this.config.enabled) {
+      this.clearLogs();
+      this.entryPool = [];
+    }
+    if (this.logs.length > this.config.maxEntries) {
+      this.cleanup();
+    }
+  }
+  /**
+   * Get current configuration
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+  /**
+   * Check if debug logging is currently enabled
+   */
+  isEnabled() {
+    return this.config.enabled;
+  }
+  /**
+   * Log an error with detailed context including stack trace
+   * Optimized with object pooling
+   */
+  logError(message, error, category = "error", additionalData, correlationId) {
+    if (!this.config.enabled) {
+      return;
+    }
+    this.safeLog(() => {
+      const startTime = performance.now();
+      const errorContext = this.extractErrorContext(error, additionalData);
+      const entry = this.getPooledEntry();
+      entry.timestamp = Date.now();
+      entry.level = "error";
+      entry.category = category;
+      entry.message = message;
+      entry.data = additionalData ? this.cloneData(additionalData) : void 0;
+      entry.correlationId = correlationId;
+      entry.errorContext = errorContext;
+      this.logs.push(entry);
+      this.logCount++;
+      this.totalLogTime += performance.now() - startTime;
+      this.performMemoryManagement();
+    });
+  }
+  /**
+   * Log validation errors with detailed field and value context
+   * Optimized with object pooling
+   */
+  logValidation(validationType, fieldName, providedValue, expectedFormat, errorReason, correlationId) {
+    if (!this.config.enabled) {
+      return;
+    }
+    this.safeLog(() => {
+      const startTime = performance.now();
+      const validationContext = {
+        validationType,
+        fieldName,
+        providedValue: this.sanitizeValue(providedValue),
+        expectedFormat,
+        errorReason
+      };
+      const entry = this.getPooledEntry();
+      entry.timestamp = Date.now();
+      entry.level = "warn";
+      entry.category = "validation";
+      entry.message = `Validation failed for ${validationType}.${fieldName}: ${errorReason}`;
+      entry.data = validationContext;
+      entry.correlationId = correlationId;
+      entry.errorContext = void 0;
+      this.logs.push(entry);
+      this.logCount++;
+      this.totalLogTime += performance.now() - startTime;
+      this.performMemoryManagement();
+    });
+  }
+  /**
+   * Log successful validation for debugging purposes
+   */
+  logValidationSuccess(validationType, fieldName, correlationId) {
+    if (!this.config.enabled) {
+      return;
+    }
+    this.safeLog(() => {
+      this.log(
+        "info",
+        "validation",
+        `Validation passed for ${validationType}.${fieldName}`,
+        { validationType, fieldName },
+        correlationId
+      );
+    });
+  }
+  /**
+   * Safely execute logging with graceful degradation
+   */
+  safeLog(logOperation) {
+    try {
+      logOperation();
+      this.logFailureCount = 0;
+    } catch (error) {
+      this.handleLoggingFailure(error);
+    }
+  }
+  /**
+   * Handle logging failures with graceful degradation
+   */
+  handleLoggingFailure(error) {
+    this.logFailureCount++;
+    if (this.logFailureCount >= this.maxLogFailures) {
+      this.config.enabled = false;
+      console.warn("DebugLogger: Disabled after repeated failures. Last error:", error);
+      return;
+    }
+    console.warn("DebugLogger: Logging operation failed:", error);
+  }
+  /**
+   * Extract comprehensive error context from error objects
+   */
+  extractErrorContext(error, additionalData) {
+    const context = {
+      additionalData
+    };
+    if (error instanceof Error) {
+      context.errorName = error.name;
+      context.errorMessage = error.message;
+      context.errorStack = error.stack;
+    } else if (error && typeof error === "object") {
+      try {
+        context.originalError = JSON.stringify(error);
+      } catch (e) {
+        context.originalError = String(error);
+      }
+    } else {
+      context.originalError = String(error);
+    }
+    return context;
+  }
+  /**
+   * Sanitize values to prevent logging sensitive information
+   */
+  sanitizeValue(value) {
+    if (typeof value === "string") {
+      if (value.length > 10 && /^[a-zA-Z0-9_-]+$/.test(value)) {
+        return `${value.substring(0, 4)}...${value.substring(value.length - 4)}`;
+      }
+    }
+    if (value && typeof value === "object") {
+      const sanitized = { ...value };
+      const sensitiveFields = ["apiKey", "token", "password", "secret", "key"];
+      for (const field of sensitiveFields) {
+        if (field in sanitized) {
+          sanitized[field] = "[REDACTED]";
+        }
+      }
+      return sanitized;
+    }
+    return value;
+  }
+  /**
+   * Get a pooled entry or create a new one to reduce GC pressure
+   */
+  getPooledEntry() {
+    if (this.entryPool.length > 0) {
+      return this.entryPool.pop();
+    }
+    return {
+      timestamp: 0,
+      level: "info",
+      category: "file-processing",
+      message: "",
+      correlationId: void 0,
+      data: void 0,
+      errorContext: void 0
+    };
+  }
+  /**
+   * Return entries to the pool for reuse
+   */
+  returnEntriesToPool(entries) {
+    for (const entry of entries) {
+      entry.data = void 0;
+      entry.errorContext = void 0;
+      entry.correlationId = void 0;
+      entry.message = "";
+      if (this.entryPool.length < this.maxPoolSize) {
+        this.entryPool.push(entry);
+      }
+    }
+  }
+  /**
+   * Optimized memory management with automatic rotation
+   */
+  performMemoryManagement() {
+    const now = Date.now();
+    if (this.logs.length > this.config.maxEntries) {
+      this.cleanup();
+    }
+    if (now - this.lastCleanupTime > this.cleanupInterval) {
+      this.periodicCleanup();
+      this.lastCleanupTime = now;
+    }
+  }
+  /**
+   * Periodic cleanup to manage memory and pool size
+   */
+  periodicCleanup() {
+    if (this.entryPool.length > this.maxPoolSize) {
+      this.entryPool.length = this.maxPoolSize;
+    }
+    const memoryThreshold = this.config.maxEntries * 0.8;
+    if (this.logs.length > memoryThreshold) {
+      const entriesToRemove = Math.floor(this.config.maxEntries * 0.2);
+      const removedEntries = this.logs.splice(0, entriesToRemove);
+      this.returnEntriesToPool(removedEntries);
+    }
+  }
+  /**
+   * Optimized deep clone for data to prevent reference leaks
+   */
+  cloneData(data) {
+    if (data === null || typeof data !== "object") {
+      return data;
+    }
+    if (data instanceof Date) {
+      return new Date(data.getTime());
+    }
+    if (Array.isArray(data)) {
+      return data.map((item) => this.cloneData(item));
+    }
+    const cloned = {};
+    for (const key in data) {
+      if (data.hasOwnProperty(key)) {
+        cloned[key] = this.cloneData(data[key]);
+      }
+    }
+    return cloned;
+  }
+  /**
+   * Get performance metrics for the debug logger
+   */
+  getPerformanceMetrics() {
+    return {
+      totalLogs: this.logCount,
+      averageLogTime: this.logCount > 0 ? this.totalLogTime / this.logCount : 0,
+      poolSize: this.entryPool.length,
+      maxPoolSize: this.maxPoolSize,
+      memoryUsage: {
+        currentLogs: this.logs.length,
+        maxLogs: this.config.maxEntries,
+        utilizationPercent: this.logs.length / this.config.maxEntries * 100
+      }
+    };
+  }
+  /**
+   * Force a memory cleanup and optimization
+   */
+  optimizeMemory() {
+    this.periodicCleanup();
+    if (this.logs.length < this.config.maxEntries * 0.5) {
+      this.logs = [...this.logs];
+    }
+    const optimalPoolSize = Math.min(this.maxPoolSize, Math.ceil(this.config.maxEntries * 0.1));
+    if (this.entryPool.length > optimalPoolSize) {
+      this.entryPool.length = optimalPoolSize;
+    }
+  }
+  /**
+   * Optimized JSON stringification with size limits to prevent memory issues
+   */
+  optimizedStringify(obj, maxDepth = 5, currentDepth = 0) {
+    if (currentDepth >= maxDepth) {
+      return "[Max Depth Reached]";
+    }
+    if (obj === null || obj === void 0) {
+      return String(obj);
+    }
+    if (typeof obj !== "object") {
+      return typeof obj === "string" ? `"${obj}"` : String(obj);
+    }
+    const seen = /* @__PURE__ */ new WeakSet();
+    try {
+      return JSON.stringify(obj, (key, value) => {
+        if (typeof value === "object" && value !== null) {
+          if (seen.has(value)) {
+            return "[Circular Reference]";
+          }
+          seen.add(value);
+        }
+        if (typeof value === "string" && value.length > 1e3) {
+          return value.substring(0, 1e3) + "... [Truncated]";
+        }
+        return value;
+      }, 2);
+    } catch (error) {
+      return "[Serialization Failed]";
+    }
+  }
+};
+
 // main.ts
 var TaskExtractorPlugin = class extends import_obsidian4.Plugin {
   constructor() {
@@ -1773,12 +2657,29 @@ var TaskExtractorPlugin = class extends import_obsidian4.Plugin {
     this.cloudModelCache = /* @__PURE__ */ new Map();
     this.apiKeyMissingNotified = /* @__PURE__ */ new Set();
     this.fileChangeDebouncer = /* @__PURE__ */ new Map();
+    this.debugLogger = null;
+  }
+  /**
+   * Get debug logger instance with lazy initialization.
+   * Only creates the logger when debug mode is enabled to avoid overhead.
+   */
+  getDebugLogger() {
+    if (this.settings.debugMode) {
+      if (!this.debugLogger) {
+        this.debugLogger = new DebugLogger({
+          enabled: true,
+          maxEntries: this.settings.debugMaxEntries || 1e3
+        });
+      }
+      return this.debugLogger;
+    }
+    return null;
   }
   async onload() {
     console.log("Loading Task Extractor plugin...");
     await this.loadSettings();
-    this.llmProvider = new LLMProviderManager(this.settings);
-    this.taskProcessor = new TaskProcessor(this.app, this.settings, this.llmProvider);
+    this.llmProvider = new LLMProviderManager(this.settings, this.getDebugLogger());
+    this.taskProcessor = new TaskProcessor(this.app, this.settings, this.llmProvider, this.getDebugLogger());
     this.serviceCache = this.llmProvider.getServiceCache();
     this.cloudModelCache = this.llmProvider.getCloudModelCache();
     this.apiKeyMissingNotified = this.llmProvider.getApiKeyMissingNotified();
@@ -1813,6 +2714,10 @@ var TaskExtractorPlugin = class extends import_obsidian4.Plugin {
     this.fileChangeDebouncer.clear();
     this.cloudModelCache.clear();
     this.apiKeyMissingNotified.clear();
+    if (this.debugLogger) {
+      this.debugLogger.cleanup();
+      this.debugLogger = null;
+    }
   }
   async loadSettings() {
     const rawSettings = await this.loadData();

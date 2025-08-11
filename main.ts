@@ -15,6 +15,7 @@ import { ExtractorSettings, DEFAULT_SETTINGS, LLMService, validateSettings } fro
 import { LLMProviderManager } from './src/llm-providers';
 import { TaskProcessor } from './src/task-processor';
 import { ExtractorSettingTab } from './src/settings';
+import { DebugLogger } from './src/debug-logger';
 
 export default class TaskExtractorPlugin extends Plugin {
   settings: ExtractorSettings;
@@ -27,14 +28,32 @@ export default class TaskExtractorPlugin extends Plugin {
 
   private llmProvider: LLMProviderManager;
   private taskProcessor: TaskProcessor;
+  private debugLogger: DebugLogger | null = null;
+
+  /**
+   * Get debug logger instance with lazy initialization.
+   * Only creates the logger when debug mode is enabled to avoid overhead.
+   */
+  private getDebugLogger(): DebugLogger | null {
+    if (this.settings.debugMode) {
+      if (!this.debugLogger) {
+        this.debugLogger = new DebugLogger({
+          enabled: true,
+          maxEntries: this.settings.debugMaxEntries || 1000
+        });
+      }
+      return this.debugLogger;
+    }
+    return null;
+  }
 
   async onload() {
     console.log('Loading Task Extractor plugin...');
     await this.loadSettings();
 
     // Initialize modular components
-    this.llmProvider = new LLMProviderManager(this.settings);
-    this.taskProcessor = new TaskProcessor(this.app, this.settings, this.llmProvider);
+    this.llmProvider = new LLMProviderManager(this.settings, this.getDebugLogger());
+    this.taskProcessor = new TaskProcessor(this.app, this.settings, this.llmProvider, this.getDebugLogger());
 
     // Sync the references for backward compatibility
     this.serviceCache = this.llmProvider.getServiceCache();
@@ -83,6 +102,11 @@ export default class TaskExtractorPlugin extends Plugin {
     // Clear caches
     this.cloudModelCache.clear();
     this.apiKeyMissingNotified.clear();
+    // Clean up debug logger
+    if (this.debugLogger) {
+      this.debugLogger.cleanup();
+      this.debugLogger = null;
+    }
   }
 
   async loadSettings() {
