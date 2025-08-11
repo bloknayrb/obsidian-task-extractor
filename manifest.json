@@ -1,7 +1,7 @@
 {
   "id": "task-extractor",
   "name": "Task Extractor (Email & Meeting Notes)",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "minAppVersion": "0.13.0",
   "description": "Scans incoming Email/Meeting note files and creates TaskNotes-compatible task notes when an LLM detects a task for Bryan Kolb.",
   "author": "Bryan",

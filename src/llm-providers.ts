@@ -460,7 +460,7 @@ export class LLMProviderManager {
       }, correlationId);
     }
     
-    const model = this.settings.model || 'claude-3-sonnet-20240229';
+    const model = this.settings.model || 'claude-3-5-haiku-20241022';
     const requestBody = {
       model,
       max_tokens: this.settings.maxTokens,
@@ -894,10 +894,21 @@ export class LLMProviderManager {
     }, correlationId);
     
     const knownModels = [
-      'claude-3-5-sonnet-20240620',
-      'claude-3-opus-20240229',
-      'claude-3-sonnet-20240229',
-      'claude-3-haiku-20240307'
+      // Current generation (2025) - Recommended
+      'claude-opus-4-1-20250805',     // Latest and most capable
+      'claude-opus-4-20250514',       // Previous Opus 4
+      'claude-sonnet-4-20250514',     // High-performance Sonnet 4
+      'claude-3-7-sonnet-20250219',   // Hybrid reasoning model
+      
+      // Claude 3.5 series
+      'claude-3-5-sonnet-20241022',   // Sonnet 3.5 v2
+      'claude-3-5-sonnet-20240620',   // Original Sonnet 3.5
+      'claude-3-5-haiku-20241022',    // Fast Haiku 3.5
+      
+      // Claude 3 series (legacy)
+      'claude-3-opus-20240229',       // Legacy Opus 3
+      'claude-3-sonnet-20240229',     // Legacy Sonnet 3
+      'claude-3-haiku-20240307'       // Legacy Haiku 3
     ];
     
     this.debugLogger?.log('info', 'service-detection', 'Anthropic models retrieved successfully', {
@@ -923,7 +934,7 @@ export class LLMProviderManager {
   getDefaultModels(provider: string): string[] {
     const defaults = {
       openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-      anthropic: ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'],
+      anthropic: ['claude-opus-4-1-20250805', 'claude-sonnet-4-20250514', 'claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
       ollama: ['llama3.2', 'mistral', 'codellama'],
       lmstudio: ['local-model']
     };

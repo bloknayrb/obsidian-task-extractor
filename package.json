@@ -1,6 +1,6 @@
 {
   "name": "obsidian-task-extractor",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "description": "An Obsidian plugin to extract tasks from email and meeting notes using LLMs",
   "main": "main.js",
   "scripts": {

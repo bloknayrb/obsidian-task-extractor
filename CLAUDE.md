@@ -9,6 +9,7 @@ This is an Obsidian plugin that leverages LLMs to extract todo items from notes.
 ## Key Features
 
 - **Multi-provider LLM support**: OpenAI, Anthropic, Ollama, and LM Studio
+- **Comprehensive Anthropic model support**: Complete 2024-2025 Claude model lineup including latest models (claude-opus-4-1-20250805, claude-sonnet-4-20250514, claude-3-7-sonnet-20250219) with cost-optimized default (claude-3-5-haiku-20241022)
 - **Dynamic model fetching**: Automatically retrieves available models from cloud providers
 - **Smart settings UI**: Dropdowns for model selection with loading states and error handling  
 - **Task extraction**: Analyzes notes and extracts actionable todo items
@@ -28,6 +29,14 @@ The main plugin file is `obsidian_task_extractor.ts`. The core functionality rev
 3. **Metadata handling**: Extracts project and client information, defaulting to null if not present
 4. **Note creation**: Creates new task notes with proper frontmatter structure
 5. **Debug logging system**: Comprehensive logging infrastructure with performance optimizations
+
+### Model Selection and Defaults
+
+The plugin now includes comprehensive support for Anthropic's model lineup:
+- **Default model**: claude-3-5-haiku-20241022 (optimized for cost-effectiveness and speed)
+- **Available models**: All current Claude models from 2024-2025 releases including Opus 4.1, Sonnet 4, and Claude 3.7 series
+- **Automatic fallbacks**: Graceful handling when preferred models are unavailable
+- **Smart model detection**: Automatically fetches and caches available models from cloud providers
 
 ### Debug Logging System
 
@@ -56,7 +65,7 @@ Key components:
 - **Secure storage**: Uses Obsidian's secure storage APIs for configuration
 - **Enhanced API security**: Pre-flight validation prevents malformed API requests
 
-### Current Dependency Versions (as of v2.1.4)
+### Current Dependency Versions (as of v2.1.5)
 - **esbuild**: ^0.25.8 (critical security fixes included)
 - **vite**: 7.1.1 (latest stable)
 - **vitest**: ^3.2.4 (comprehensive testing framework)
@@ -75,6 +84,8 @@ Key components:
 - This is a TypeScript-based Obsidian plugin with full build configuration
 - Plugin supports both cloud-based and local LLM providers for privacy/offline usage
 - Settings include provider choice, model configuration, inline checklist toggle, and debug options
+- Enhanced Anthropic integration with comprehensive model support including latest 2025 releases
+- Default model optimized for cost-effectiveness (claude-3-5-haiku-20241022) while supporting advanced models for complex tasks
 - Debug logging can be enabled in settings with configurable maximum entry limits
 - Performance optimizations ensure minimal impact on plugin operation when debug mode is disabled
 - Security-first development with regular dependency audits and vulnerability fixes
