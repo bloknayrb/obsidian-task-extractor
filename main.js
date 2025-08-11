@@ -32,12 +32,12 @@ var import_obsidian4 = require("obsidian");
 // src/types.ts
 var DEFAULT_FRONTMATTER_FIELDS = [
   { key: "task", defaultValue: "", type: "text", required: true },
-  { key: "status", defaultValue: "todo", type: "select", options: ["todo", "doing", "done", "cancelled"], required: true },
+  { key: "status", defaultValue: "inbox", type: "select", options: ["inbox", "next", "waiting", "someday", "done", "cancelled"], required: true },
   { key: "priority", defaultValue: "medium", type: "select", options: ["low", "medium", "high", "urgent"], required: true },
   { key: "due", defaultValue: "", type: "date", required: false },
   { key: "project", defaultValue: "", type: "text", required: false },
   { key: "client", defaultValue: "", type: "text", required: false },
-  { key: "created", defaultValue: "{{date}}", type: "date", required: false },
+  { key: "created", defaultValue: "{{date}}", type: "date", required: true },
   { key: "tags", defaultValue: "task", type: "text", required: false }
 ];
 var DEFAULT_SETTINGS = {
@@ -550,6 +550,7 @@ var TaskProcessor = class {
     this.llmProvider = llmProvider;
     this.processingFiles = /* @__PURE__ */ new Set();
     this.fileChangeDebouncer = /* @__PURE__ */ new Map();
+    this.processingQueue = /* @__PURE__ */ new Map();
   }
   // Debounce file changes to prevent rapid processing
   debounceFileChange(file, callback) {
@@ -564,16 +565,27 @@ var TaskProcessor = class {
   }
   // When a file is created or modified
   async onFileChanged(file) {
+    if (file.extension !== "md")
+      return;
+    const queueStatus = this.processingQueue.get(file.path);
+    if ((queueStatus == null ? void 0 : queueStatus.status) === "processing" || this.processingFiles.has(file.path)) {
+      return;
+    }
+    const processingStatus = {
+      status: "queued",
+      startTime: Date.now()
+    };
+    processingStatus.timeout = setTimeout(() => {
+      console.warn(`TaskExtractor: File processing timeout for ${file.path}`);
+      this.cleanupFileProcessing(file.path);
+    }, 3e4);
+    this.processingQueue.set(file.path, processingStatus);
+    this.processingFiles.add(file.path);
+    processingStatus.status = "processing";
     try {
-      if (file.extension !== "md")
-        return;
-      if (this.processingFiles.has(file.path))
-        return;
-      this.processingFiles.add(file.path);
       const cache = this.app.metadataCache.getFileCache(file);
       const front = cache == null ? void 0 : cache.frontmatter;
       if (!front) {
-        this.processingFiles.delete(file.path);
         return;
       }
       if (!this.settings.triggerTypes || !Array.isArray(this.settings.triggerTypes) || this.settings.triggerTypes.length === 0) {
@@ -584,7 +596,6 @@ var TaskProcessor = class {
       const processedKey = this.settings.processedFrontmatterKey || "taskExtractor.processed";
       const processedValue = this.getFrontmatterValue(front, processedKey);
       if (processedValue === true || processedValue === "true") {
-        this.processingFiles.delete(file.path);
         return;
       }
       const frontmatterField = this.validateFrontmatterField(this.settings.triggerFrontmatterField);
@@ -592,7 +603,6 @@ var TaskProcessor = class {
       const type = ("" + typeRaw).toLowerCase();
       const accepted = this.settings.triggerTypes.map((t) => t.toLowerCase());
       if (!accepted.includes(type)) {
-        this.processingFiles.delete(file.path);
         return;
       }
       if (!this.settings.ownerName || this.settings.ownerName.trim().length === 0) {
@@ -603,18 +613,30 @@ var TaskProcessor = class {
       const content = await this.app.vault.read(file);
       const extraction = await this.extractTaskFromContent(content, file.path);
       if (extraction && extraction.found) {
-        await this.createTaskNote(extraction, file);
+        await this.handleTaskExtraction(extraction, file);
       }
       await this.markFileProcessed(file);
-      this.processingFiles.delete(file.path);
+      if (this.processingQueue.has(file.path)) {
+        this.processingQueue.get(file.path).status = "completed";
+      }
     } catch (err) {
       console.error("TaskExtractor error", err);
       new import_obsidian2.Notice("Task Extractor: error processing file \u2014 see console");
-      try {
-        this.processingFiles.delete(file.path);
-      } catch (e) {
+      if (this.processingQueue.has(file.path)) {
+        this.processingQueue.get(file.path).status = "failed";
       }
+    } finally {
+      this.cleanupFileProcessing(file.path);
     }
+  }
+  // Centralized cleanup method for atomic processing
+  cleanupFileProcessing(filePath) {
+    const status = this.processingQueue.get(filePath);
+    if (status == null ? void 0 : status.timeout) {
+      clearTimeout(status.timeout);
+    }
+    this.processingQueue.delete(filePath);
+    this.processingFiles.delete(filePath);
   }
   // scan vault once on load for unprocessed matching notes
   async scanExistingFiles() {
@@ -724,13 +746,32 @@ ${processedKey}: true
       console.warn("Failed to mark file processed with fallback method:", e);
     }
   }
-  // Compose prompt, call LLM, and parse response
-  async extractTaskFromContent(content, sourcePath) {
-    const basePrompt = this.settings.customPrompt || `You are a task extraction assistant. You will be given the full text of an email or meeting note. Determine if there is an explicit or implied actionable task for ${this.settings.ownerName} (exact name). If there is a task, output a single JSON object and nothing else. If there is no task, output {"found": false}.`;
+  // Shared method for constructing prompts
+  buildExtractionPrompt(sourcePath, content) {
+    const basePrompt = this.settings.customPrompt || `You are a task extraction specialist. Extract actionable tasks from emails and meeting notes following these strict rules:
+
+EXTRACTION RULES:
+- Extract ONLY concrete, actionable tasks explicitly stated or clearly implied
+- Use null for uncertain/missing information - DO NOT GUESS
+- Extract tasks only for the specified person: ${this.settings.ownerName} (exact name)
+- If no clear tasks exist, return {"found": false, "tasks": []}
+
+PRIORITY GUIDELINES:
+- high: explicit urgency/deadline mentioned
+- medium: standard requests without time pressure  
+- low: optional/background items
+
+VALIDATION CONSTRAINTS:
+- task_title: 6-100 characters, actionable phrasing
+- task_details: max 300 characters, concrete description
+- due_date: YYYY-MM-DD format only if explicitly mentioned
+- source_excerpt: exact quote (max 150 chars) justifying extraction
+
+Return valid JSON only. Be conservative - accuracy over completeness.`;
     const fieldDescriptions = this.settings.frontmatterFields.filter((f) => f.required || f.key === "task_title" || f.key === "task_details").map((f) => {
       var _a;
       if (f.key === "task" || f.key === "task_title")
-        return "- task_title: short (6-12 words) actionable title";
+        return "- task_title: short (6-100 words) actionable title";
       if (f.key === "task_details")
         return "- task_details: 1-3 sentences describing what to do and any context";
       if (f.key === "due")
@@ -743,19 +784,110 @@ ${processedKey}: true
         return "- client: client name if mentioned, otherwise null";
       return `- ${f.key}: ${f.defaultValue || "appropriate value based on context"}`;
     });
-    const system = `${basePrompt} The JSON, when found, must include these keys:
-${fieldDescriptions.join("\n")}
-- source_excerpt: a short quoted excerpt from the note that justifies the decision (max 3 lines)
-Return valid JSON only.`;
+    const system = `${basePrompt}
+
+When tasks are found, return JSON in this format:
+{
+  "found": true,
+  "tasks": [
+    {
+      ${fieldDescriptions.join(",\n      ")},
+      "source_excerpt": "exact quote from source (max 150 chars)",
+      "confidence": "high|medium|low"
+    }
+  ],
+  "confidence": "high|medium|low"
+}
+
+When no tasks found, return: {"found": false, "tasks": []}`;
     const user = `SOURCE_PATH: ${sourcePath}
 ---BEGIN NOTE---
 ${content}
 ---END NOTE---`;
+    return { system, user };
+  }
+  // New method for multi-task extraction
+  async extractMultipleTasksFromContent(content, sourcePath) {
+    const { system, user } = this.buildExtractionPrompt(sourcePath, content);
+    try {
+      const raw = await this.llmProvider.callLLM(system, user);
+      const parsed = this.safeParseJSON(raw);
+      if (!parsed)
+        return { found: false, tasks: [] };
+      if ("tasks" in parsed && Array.isArray(parsed.tasks)) {
+        return parsed;
+      }
+      if ("found" in parsed && parsed.found) {
+        return {
+          found: true,
+          tasks: [{
+            task_title: parsed.task_title || "Unspecified task",
+            task_details: parsed.task_details || "",
+            due_date: parsed.due_date || null,
+            priority: parsed.priority || "medium",
+            project: parsed.project || null,
+            client: parsed.client || null,
+            source_excerpt: parsed.source_excerpt || "",
+            confidence: parsed.confidence || "medium"
+          }]
+        };
+      }
+      return { found: false, tasks: [] };
+    } catch (e) {
+      console.error("extractMultipleTasksFromContent error", e);
+      return { found: false, tasks: [] };
+    }
+  }
+  // Handle task extraction results (both single and multi-task)
+  async handleTaskExtraction(extraction, sourceFile) {
+    try {
+      if ("tasks" in extraction && Array.isArray(extraction.tasks)) {
+        let createdCount = 0;
+        for (const task of extraction.tasks) {
+          try {
+            await this.createTaskNote(task, sourceFile);
+            createdCount++;
+          } catch (error) {
+            console.error(`Failed to create task note for: ${task.task_title}`, error);
+          }
+        }
+        if (createdCount > 0) {
+          new import_obsidian2.Notice(`Task Extractor: created ${createdCount} task note${createdCount !== 1 ? "s" : ""}`);
+        }
+      } else {
+        await this.createTaskNote(extraction, sourceFile);
+        new import_obsidian2.Notice(`Task Extractor: created task "${extraction.task_title}"`);
+      }
+    } catch (error) {
+      console.error("Error handling task extraction:", error);
+      new import_obsidian2.Notice("Task Extractor: error creating task notes \u2014 see console");
+    }
+  }
+  // Compose prompt, call LLM, and parse response (legacy method for backward compatibility)
+  async extractTaskFromContent(content, sourcePath) {
+    const { system, user } = this.buildExtractionPrompt(sourcePath, content);
     try {
       const raw = await this.llmProvider.callLLM(system, user);
       const parsed = this.safeParseJSON(raw);
       if (!parsed)
         return { found: false };
+      if (parsed.tasks && Array.isArray(parsed.tasks)) {
+        if (parsed.tasks.length > 0) {
+          const firstTask = parsed.tasks[0];
+          return {
+            found: true,
+            task_title: firstTask.task_title || "Unspecified task",
+            task_details: firstTask.task_details || "",
+            due_date: firstTask.due_date || null,
+            priority: firstTask.priority || "medium",
+            source_excerpt: firstTask.source_excerpt || "",
+            ...firstTask
+            // Include any additional extracted fields
+          };
+        } else {
+          return { found: false };
+        }
+      }
       if (!parsed.found)
         return { found: false };
       return {
@@ -776,23 +908,88 @@ ${content}
   safeParseJSON(text) {
     if (!text)
       return null;
+    let parsed = null;
     try {
-      return JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch (e) {
-    }
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) {
-      try {
-        return JSON.parse(m[0]);
-      } catch (e) {
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          parsed = JSON.parse(m[0]);
+        } catch (e2) {
+          const fixed = m[0].replace(/'/g, '"');
+          try {
+            parsed = JSON.parse(fixed);
+          } catch (e3) {
+            return null;
+          }
+        }
+      } else {
+        return null;
       }
     }
-    const fixed = text.replace(/'/g, '"');
-    try {
-      return JSON.parse(fixed);
-    } catch (e) {
+    if (!parsed || typeof parsed !== "object")
+      return null;
+    return this.validateAndNormalizeParsedResult(parsed);
+  }
+  validateAndNormalizeParsedResult(data) {
+    if (typeof data !== "object" || data === null)
+      return null;
+    if (data.hasOwnProperty("tasks") && Array.isArray(data.tasks)) {
+      const validTasks = [];
+      for (const task of data.tasks) {
+        if (this.isValidTask(task)) {
+          validTasks.push({
+            task_title: task.task_title || "Unspecified task",
+            task_details: task.task_details || "",
+            due_date: task.due_date || null,
+            priority: task.priority || "medium",
+            project: task.project || null,
+            client: task.client || null,
+            source_excerpt: task.source_excerpt || "",
+            confidence: task.confidence || "medium",
+            ...task
+          });
+        }
+      }
+      return {
+        found: data.found === true && validTasks.length > 0,
+        tasks: validTasks,
+        confidence: data.confidence || "medium"
+      };
+    }
+    if (data.hasOwnProperty("found")) {
+      return {
+        found: data.found === true,
+        task_title: data.task_title || data.title || "",
+        task_details: data.task_details || data.details || "",
+        due_date: data.due_date || null,
+        priority: data.priority || "medium",
+        source_excerpt: data.source_excerpt || "",
+        ...data
+      };
     }
     return null;
+  }
+  isValidTask(task) {
+    if (typeof task !== "object" || !task)
+      return false;
+    if (!task.task_title || typeof task.task_title !== "string" || task.task_title.trim().length === 0) {
+      return false;
+    }
+    if (task.confidence && !["high", "medium", "low"].includes(task.confidence)) {
+      return false;
+    }
+    if (task.priority && !["high", "medium", "low"].includes(task.priority)) {
+      return false;
+    }
+    if (task.due_date && typeof task.due_date === "string") {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(task.due_date)) {
+        return false;
+      }
+    }
+    return true;
   }
   // Create TaskNotes–compatible note in tasksFolder
   async createTaskNote(extraction, sourceFile) {
@@ -874,10 +1071,16 @@ ${content}
     }
     return trimmed;
   }
-  // Cleanup method
+  // Enhanced cleanup method with processing queue management
   cleanup() {
     this.fileChangeDebouncer.forEach((timeout) => clearTimeout(timeout));
     this.fileChangeDebouncer.clear();
+    this.processingQueue.forEach((status) => {
+      if (status.timeout) {
+        clearTimeout(status.timeout);
+      }
+    });
+    this.processingQueue.clear();
     this.processingFiles.clear();
   }
   // Methods for backward compatibility
