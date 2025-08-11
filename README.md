@@ -439,6 +439,20 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 📈 Changelog
 
+### v2.1.0 - Flexible Frontmatter Filtering & Enhanced UI (2025-01-08)
+
+#### 🎯 New Features
+- **Flexible Frontmatter Field Configuration**: Customize which frontmatter field triggers processing (defaults to "Type" for backward compatibility)
+- **Enhanced Slider Components**: Bidirectional slider-input synchronization with real-time validation
+- **Improved Input Validation**: Comprehensive bounds checking, NaN handling, and visual feedback
+- **Comprehensive Test Suite**: 41 unit and integration tests ensuring reliability and maintainability
+
+#### 🔧 Technical Improvements
+- YAML key validation for frontmatter field names with graceful fallback
+- Enhanced UI components with better accessibility and user experience
+- Robust error handling and validation throughout the application
+- Full backward compatibility - existing configurations work unchanged
+
 ### v2.0.0 - Quality & Reliability Improvements (2025-01-08)
 
 #### 🔧 Major Improvements
@@ -449,12 +463,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Task 5**: Standardized error handling - Created comprehensive error management system with custom error classes and recovery strategies
 - **Task 6**: Implemented memory management - Added memory monitoring, periodic cleanup, and configurable size limits to prevent memory leaks
 
-### v0.2.0 - Flexible Frontmatter Filtering & Enhanced UI
-- ✅ **Flexible Frontmatter Field Configuration**: Customize which frontmatter field triggers processing
-- ✅ **Enhanced Slider Components**: Bidirectional slider-input synchronization with validation
-- ✅ **Improved Input Validation**: Real-time bounds checking and error feedback
-- ✅ **Comprehensive Test Suite**: 41 unit and integration tests ensuring reliability
-- ✅ **Backward Compatibility**: All existing configurations continue to work seamlessly
+
 - **Task 7**: Optimized string operations - Precompiled regex patterns and combined operations for 20%+ performance improvement
 - **Task 8**: Enhanced logging and debugging - Implemented structured logging system with contextual information, timing, and debug capabilities
 
