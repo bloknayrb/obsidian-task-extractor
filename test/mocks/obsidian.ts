@@ -103,3 +103,7 @@ export const stringifyYaml = vi.fn();
 export const debounce = vi.fn((fn: Function, delay: number) => fn);
 export const normalizePath = vi.fn((path: string) => path);
 export const Notice = vi.fn();
+export const requestUrl = vi.fn();
+export const moment = vi.fn(() => ({
+  format: vi.fn(() => '2024-01-01'),
+}));

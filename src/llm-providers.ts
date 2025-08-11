@@ -1,4 +1,4 @@
-/*
+'''/*
  * LLM Provider implementations and service detection
  */
 
@@ -416,7 +416,7 @@ export class LLMProviderManager {
   }
 
   private async callAnthropic(systemPrompt: string, userPrompt: string, correlationId?: string): Promise<string | null> {
-    const endpoint = 'https://api.anthropic.com/v1/messages';
+    const endpoint = this.settings.anthropicUrl || 'https://api.anthropic.com/v1/messages';
     const model = this.settings.model || 'claude-3-sonnet-20240229';
     const requestBody = {
       model,
@@ -822,7 +822,7 @@ export class LLMProviderManager {
         error: e.message,
         errorType: e.name
       }, correlationId);
-      throw e;
+      return this.getDefaultModels('openai');
     }
   }
 
@@ -834,8 +834,7 @@ export class LLMProviderManager {
     }, correlationId);
     
     const knownModels = [
-      'claude-3-5-sonnet-20241022',
-      'claude-3-5-haiku-20241022', 
+      'claude-3-5-sonnet-20240620',
       'claude-3-opus-20240229',
       'claude-3-sonnet-20240229',
       'claude-3-haiku-20240307'
@@ -864,7 +863,7 @@ export class LLMProviderManager {
   getDefaultModels(provider: string): string[] {
     const defaults = {
       openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-      anthropic: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
+      anthropic: ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'],
       ollama: ['llama3.2', 'mistral', 'codellama'],
       lmstudio: ['local-model']
     };
@@ -906,3 +905,4 @@ export class LLMProviderManager {
   getCloudModelCache() { return this.cloudModelCache; }
   getApiKeyMissingNotified() { return this.apiKeyMissingNotified; }
 }
+''

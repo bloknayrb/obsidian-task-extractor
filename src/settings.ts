@@ -192,6 +192,19 @@ export class ExtractorSettingTab extends PluginSettingTab {
             // Refresh model dropdown
             this.display();
           }));
+
+      if (this.settings.provider === 'anthropic') {
+        new Setting(containerEl)
+          .setName('Anthropic URL')
+          .setDesc('Optional: URL for a proxy for the Anthropic API.')
+          .addText(text => text
+            .setPlaceholder('https://api.anthropic.com/v1/messages')
+            .setValue(this.settings.anthropicUrl)
+            .onChange((v) => { 
+              this.settings.anthropicUrl = v.trim(); 
+              this.debouncedSave();
+            }));
+      }
     }
 
     // Model selection (async)
@@ -280,6 +293,10 @@ export class ExtractorSettingTab extends PluginSettingTab {
   }
   
   private addLocalLLMSection(containerEl: HTMLElement): void {
+    if (this.settings.provider !== 'ollama' && this.settings.provider !== 'lmstudio') {
+      return;
+    }
+
     containerEl.createEl('h3', { text: 'Local LLM Configuration' });
     
     if (this.settings.provider === 'ollama') {

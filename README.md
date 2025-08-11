@@ -91,6 +91,7 @@ npm run dev
 - Get API key from [Anthropic Console](https://console.anthropic.com)
 - Recommended model: `claude-3-haiku-20240307` (fast and affordable)
 - Add API key in plugin settings
+- **Optional**: Configure a custom Anthropic URL for proxies or special endpoints.
 
 #### Ollama (Local)
 1. Install [Ollama](https://ollama.ai/)
@@ -443,6 +444,12 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Documentation**: This README and in-plugin help
 
 ## 📈 Changelog
+
+### v2.1.4 - Anthropic URL Configuration (2025-08-11)
+
+- **New Feature**: Added a setting to configure the Anthropic API URL, allowing the use of proxies.
+- **Bug Fix**: Resolved a 404 error when calling the Anthropic API due to network configurations.
+- **Improved Robustness**: Enhanced the reliability of fetching cloud models by adding error handling and fallback to default models.
 
 ### v2.1.2 - Performance-Optimized Debug Logging (2025-01-08)
 

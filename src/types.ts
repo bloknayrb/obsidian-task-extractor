@@ -26,6 +26,7 @@ export interface ExtractorSettings {
   // Local LLM settings
   ollamaUrl: string;
   lmstudioUrl: string;
+  anthropicUrl: string;
   localModelRefreshInterval: number; // minutes
   
   // Processing settings
@@ -100,6 +101,7 @@ export const DEFAULT_SETTINGS: ExtractorSettings = {
   // Local LLM settings
   ollamaUrl: 'http://localhost:11434',
   lmstudioUrl: 'http://localhost:1234',
+  anthropicUrl: 'https://api.anthropic.com/v1/messages',
   localModelRefreshInterval: 5,
   
   // Processing settings
@@ -144,6 +146,7 @@ export function validateSettings(settings: Partial<ExtractorSettings>, debugLogg
   if (typeof settings.model === 'string') validated.model = settings.model;
   if (typeof settings.ollamaUrl === 'string') validated.ollamaUrl = settings.ollamaUrl;
   if (typeof settings.lmstudioUrl === 'string') validated.lmstudioUrl = settings.lmstudioUrl;
+  if (typeof settings.anthropicUrl === 'string') validated.anthropicUrl = settings.anthropicUrl;
   if (typeof settings.tasksFolder === 'string' && settings.tasksFolder.trim()) {
     validated.tasksFolder = settings.tasksFolder.trim();
   }
