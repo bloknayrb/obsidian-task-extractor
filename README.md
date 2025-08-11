@@ -315,26 +315,31 @@ Source: [[Meetings/Weekly Team Sync - 2025-08-08]]
 
 ### Debug Mode & Logging
 
-The plugin includes comprehensive logging and debugging capabilities:
+The plugin includes comprehensive logging and debugging capabilities for troubleshooting and monitoring:
 
 #### Enable Debug Mode
-1. Go to **Settings → Task Extractor → Logging and Debugging**
+1. Go to **Settings → Task Extractor → Debug Settings**
 2. Toggle **Enable Debug Mode**
-3. Set **Log Level** (Error, Warning, Info, Debug)
-4. Enable **Performance Timing** to track operation speeds
+3. Configure **Max Log Entries** (default: 1000)
 
-#### View Logs
+#### Debug Features
+- **Zero Performance Impact**: When disabled, logging has no performance overhead
+- **Correlation Tracking**: Related operations share correlation IDs for easy tracing
+- **Comprehensive Coverage**: Logs all major decision points and operations
+- **Memory Management**: Automatic log rotation to prevent memory issues
+- **Structured Data**: All logs include relevant contextual information
+
+#### Log Categories
+- **file-processing**: File filtering, validation, and processing events
+- **llm-call**: LLM prompt construction, API calls, and response parsing
+- **task-creation**: Task note creation and validation
+- **validation**: Data validation and parsing results
+- **error**: Detailed error information with stack traces
+
+#### Viewing Logs
 - **Console**: Open Developer Console (Ctrl+Shift+I) and filter by "TaskExtractor"
-- **Export**: Use "Export Logs" button to copy logs to clipboard
-- **Statistics**: View log counts, error rates, and average operation times
-- **Recent Logs**: "View Recent Logs" outputs last 50 entries to console
-
-#### Log Features
-- **Structured Output**: Each log includes timestamp, level, operation, timing, and context
-- **Performance Monitoring**: Automatic timing for LLM calls, file operations, and task extraction
-- **Memory Management**: Track memory usage and cleanup operations
-- **Error Details**: Detailed error context with provider, model, and file information
-- **Search & Filter**: Built-in log search functionality for troubleshooting
+- **Export**: Use debug logger's export functionality to save logs as text
+- **Real-time**: Monitor operations as they happen with correlation tracking
 
 ### Performance Issues
 
@@ -438,6 +443,26 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Documentation**: This README and in-plugin help
 
 ## 📈 Changelog
+
+### v2.1.1 - Debug Logging Infrastructure (2025-01-08)
+
+#### 🔍 New Features
+- **Debug Logger Core**: Comprehensive logging infrastructure with correlation tracking and memory management
+- **TaskProcessor Integration**: Complete debug logging integration with zero performance impact when disabled
+- **Structured Logging**: Categorized logs (file-processing, llm-call, task-creation, validation, error) with contextual data
+- **Correlation Tracking**: Related operations share correlation IDs for easy workflow tracing
+- **Memory Management**: Automatic log rotation and cleanup to prevent memory issues
+
+#### 🛠️ Technical Improvements
+- **Zero Overhead Design**: Conditional logging ensures no performance impact when debug mode is disabled
+- **Comprehensive Coverage**: Logs all major decision points, file filtering, LLM calls, and task creation
+- **Error Context**: Detailed error logging with stack traces and contextual information
+- **Settings Integration**: Debug mode toggle and max entries configuration in settings UI
+
+#### 🧪 Testing
+- **Integration Tests**: Comprehensive test suite verifying debug logging functionality
+- **Performance Validation**: Tests confirm zero overhead when debug mode is disabled
+- **Correlation Verification**: Tests ensure proper correlation ID tracking across operations
 
 ### v2.1.0 - Flexible Frontmatter Filtering & Enhanced UI (2025-01-08)
 

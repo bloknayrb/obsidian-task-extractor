@@ -5,6 +5,7 @@
 import { App, TFile, Notice } from 'obsidian';
 import { ExtractorSettings, TaskExtraction, TaskExtractionResult, ExtractedTask } from './types';
 import { LLMProviderManager } from './llm-providers';
+import { DebugLogger } from './debug-logger';
 
 interface ProcessingStatus {
   status: 'queued' | 'processing' | 'completed' | 'failed';
@@ -20,8 +21,38 @@ export class TaskProcessor {
   constructor(
     private app: App,
     private settings: ExtractorSettings,
-    private llmProvider: LLMProviderManager
+    private llmProvider: LLMProviderManager,
+    private debugLogger?: DebugLogger
   ) {}
+
+  /**
+   * Conditional logging helper to ensure zero overhead when debug mode is disabled
+   */
+  private log(
+    level: 'info' | 'warn' | 'error',
+    category: 'file-processing' | 'llm-call' | 'task-creation' | 'service-detection' | 'validation' | 'error',
+    message: string,
+    data?: any,
+    correlationId?: string
+  ): void {
+    if (this.debugLogger?.isEnabled()) {
+      this.debugLogger.log(level, category, message, data, correlationId);
+    }
+  }
+
+  /**
+   * Start a new operation for correlation tracking
+   */
+  private startOperation(
+    category: 'file-processing' | 'llm-call' | 'task-creation' | 'service-detection' | 'validation' | 'error',
+    message: string,
+    data?: any
+  ): string | undefined {
+    if (this.debugLogger?.isEnabled()) {
+      return this.debugLogger.startOperation(category, message, data);
+    }
+    return undefined;
+  }
 
   // Debounce file changes to prevent rapid processing
   debounceFileChange(file: TFile, callback: (file: TFile) => void) {
@@ -39,11 +70,27 @@ export class TaskProcessor {
   // When a file is created or modified
   async onFileChanged(file: TFile) {
     // Atomic file processing with guaranteed cleanup and queue management
-    if (file.extension !== 'md') return;
+    if (file.extension !== 'md') {
+      this.log('info', 'file-processing', 'File skipped: not a markdown file', { 
+        filePath: file.path, 
+        extension: file.extension 
+      });
+      return;
+    }
+
+    // Start operation tracking for correlation
+    const correlationId = this.startOperation('file-processing', 'Processing file', { 
+      filePath: file.path 
+    });
     
     // Check if already in processing queue or set
     const queueStatus = this.processingQueue.get(file.path);
     if (queueStatus?.status === 'processing' || this.processingFiles.has(file.path)) {
+      this.log('info', 'file-processing', 'File skipped: already being processed', { 
+        filePath: file.path,
+        queueStatus: queueStatus?.status,
+        inProcessingSet: this.processingFiles.has(file.path)
+      }, correlationId);
       return;
     }
     
@@ -69,12 +116,24 @@ export class TaskProcessor {
       const cache = this.app.metadataCache.getFileCache(file);
       const front = cache?.frontmatter;
       if (!front) {
+        this.log('info', 'file-processing', 'File skipped: no frontmatter found', { 
+          filePath: file.path 
+        }, correlationId);
         return;
       }
+
+      this.log('info', 'file-processing', 'File has frontmatter, validating', { 
+        filePath: file.path,
+        frontmatterKeys: Object.keys(front)
+      }, correlationId);
 
       // Validate settings at runtime to handle corrupted configurations
       if (!this.settings.triggerTypes || !Array.isArray(this.settings.triggerTypes) || this.settings.triggerTypes.length === 0) {
         console.warn('TaskExtractor: Invalid trigger types configuration, skipping processing');
+        this.log('error', 'validation', 'Invalid trigger types configuration', { 
+          filePath: file.path,
+          triggerTypes: this.settings.triggerTypes
+        }, correlationId);
         this.processingFiles.delete(file.path);
         return;
       }
@@ -84,6 +143,11 @@ export class TaskProcessor {
       const processedValue = this.getFrontmatterValue(front, processedKey);
       if (processedValue === true || processedValue === 'true') {
         // already processed
+        this.log('info', 'file-processing', 'File skipped: already processed', { 
+          filePath: file.path,
+          processedKey,
+          processedValue
+        }, correlationId);
         return;
       }
 
@@ -92,39 +156,81 @@ export class TaskProcessor {
       const typeRaw = this.getFrontmatterValue(front, frontmatterField) || '';
       const type = ('' + typeRaw).toLowerCase();
       const accepted = this.settings.triggerTypes.map(t => t.toLowerCase());
+      
+      this.log('info', 'file-processing', 'Checking trigger type match', { 
+        filePath: file.path,
+        frontmatterField,
+        typeFound: type,
+        acceptedTypes: accepted,
+        matches: accepted.includes(type)
+      }, correlationId);
+      
       if (!accepted.includes(type)) {
+        this.log('info', 'file-processing', 'File skipped: trigger type not matched', { 
+          filePath: file.path,
+          typeFound: type,
+          acceptedTypes: accepted
+        }, correlationId);
         return;
       }
 
       // Validate owner name is configured
       if (!this.settings.ownerName || this.settings.ownerName.trim().length === 0) {
         console.warn('TaskExtractor: Owner name not configured, skipping processing');
+        this.log('error', 'validation', 'Owner name not configured', { 
+          filePath: file.path,
+          ownerName: this.settings.ownerName
+        }, correlationId);
         this.processingFiles.delete(file.path);
         return;
       }
 
       // read file content
       const content = await this.app.vault.read(file);
+      this.log('info', 'file-processing', 'File content read, proceeding to task extraction', { 
+        filePath: file.path,
+        contentLength: content.length
+      }, correlationId);
 
       // call LLM
-      const extraction = await this.extractTaskFromContent(content, file.path);
+      const extraction = await this.extractTaskFromContent(content, file.path, correlationId);
 
       if (extraction && extraction.found) {
+        this.log('info', 'file-processing', 'Tasks found, proceeding to task creation', { 
+          filePath: file.path,
+          tasksFound: 'tasks' in extraction ? extraction.tasks?.length : 1
+        }, correlationId);
         // Handle both single task and multi-task results
-        await this.handleTaskExtraction(extraction, file);
+        await this.handleTaskExtraction(extraction, file, correlationId);
+      } else {
+        this.log('info', 'file-processing', 'No tasks found in file', { 
+          filePath: file.path
+        }, correlationId);
       }
 
       // mark as processed if configured
-      await this.markFileProcessed(file);
+      await this.markFileProcessed(file, correlationId);
       
       // Mark as completed
       if (this.processingQueue.has(file.path)) {
         this.processingQueue.get(file.path)!.status = 'completed';
       }
 
+      this.log('info', 'file-processing', 'File processing completed successfully', { 
+        filePath: file.path,
+        processingTime: Date.now() - (this.processingQueue.get(file.path)?.startTime || Date.now())
+      }, correlationId);
+
     } catch (err) {
       console.error('TaskExtractor error', err);
       new Notice('Task Extractor: error processing file — see console');
+      
+      this.log('error', 'error', 'File processing failed with error', { 
+        filePath: file.path,
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+        processingTime: Date.now() - (this.processingQueue.get(file.path)?.startTime || Date.now())
+      }, correlationId);
       
       // Mark as failed
       if (this.processingQueue.has(file.path)) {
@@ -211,8 +317,13 @@ export class TaskProcessor {
     return front[key];
   }
 
-  private async markFileProcessed(file: TFile) {
-    if (!this.settings.processedFrontmatterKey) return;
+  private async markFileProcessed(file: TFile, correlationId?: string) {
+    if (!this.settings.processedFrontmatterKey) {
+      this.log('info', 'file-processing', 'Skipping processed marker: no processed frontmatter key configured', { 
+        filePath: file.path 
+      }, correlationId);
+      return;
+    }
     
     try {
       // Use Obsidian's official API for atomic frontmatter processing
@@ -233,15 +344,24 @@ export class TaskProcessor {
         // Set the final property
         current[keys[keys.length - 1]] = true;
       });
+      
+      this.log('info', 'file-processing', 'File marked as processed successfully', { 
+        filePath: file.path,
+        processedKey: this.settings.processedFrontmatterKey
+      }, correlationId);
     } catch (e) {
       console.warn('Failed to mark file processed with official API:', e);
+      this.log('warn', 'file-processing', 'Failed to mark file processed with official API, trying fallback', { 
+        filePath: file.path,
+        error: e instanceof Error ? e.message : String(e)
+      }, correlationId);
       // Fallback to previous method if the official API fails
-      await this.markFileProcessedFallback(file);
+      await this.markFileProcessedFallback(file, correlationId);
     }
   }
 
   // Fallback method using the previous implementation
-  private async markFileProcessedFallback(file: TFile) {
+  private async markFileProcessedFallback(file: TFile, correlationId?: string) {
     try {
       const content = await this.app.vault.read(file);
       const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
@@ -263,8 +383,16 @@ export class TaskProcessor {
         newContent = `---\n${processedKey}: true\n---\n\n` + content;
         await this.app.vault.modify(file, newContent);
       }
+      this.log('info', 'file-processing', 'File marked as processed using fallback method', { 
+        filePath: file.path,
+        processedKey: this.settings.processedFrontmatterKey
+      }, correlationId);
     } catch (e) {
       console.warn('Failed to mark file processed with fallback method:', e);
+      this.log('error', 'file-processing', 'Failed to mark file processed with fallback method', { 
+        filePath: file.path,
+        error: e instanceof Error ? e.message : String(e)
+      }, correlationId);
     }
   }
 
@@ -329,14 +457,41 @@ When no tasks found, return: {"found": false, "tasks": []}`;
   }
 
   // New method for multi-task extraction
-  async extractMultipleTasksFromContent(content: string, sourcePath: string): Promise<TaskExtractionResult> {
+  async extractMultipleTasksFromContent(content: string, sourcePath: string, correlationId?: string): Promise<TaskExtractionResult> {
     const { system, user } = this.buildExtractionPrompt(sourcePath, content);
+
+    this.log('info', 'llm-call', 'LLM prompt constructed for multi-task extraction', { 
+      filePath: sourcePath,
+      systemPromptLength: system.length,
+      userPromptLength: user.length,
+      contentLength: content.length
+    }, correlationId);
 
     try {
       const raw = await this.llmProvider.callLLM(system, user);
+      
+      this.log('info', 'llm-call', 'LLM response received for multi-task extraction', { 
+        filePath: sourcePath,
+        responseLength: raw?.length || 0,
+        responsePreview: raw?.substring(0, 200) || 'null'
+      }, correlationId);
+
       const parsed = this.safeParseJSON(raw);
       
-      if (!parsed) return { found: false, tasks: [] };
+      if (!parsed) {
+        this.log('warn', 'llm-call', 'Failed to parse LLM response as JSON for multi-task extraction', { 
+          filePath: sourcePath,
+          rawResponse: raw
+        }, correlationId);
+        return { found: false, tasks: [] };
+      }
+
+      this.log('info', 'llm-call', 'LLM response parsed successfully for multi-task extraction', { 
+        filePath: sourcePath,
+        parsedStructure: Object.keys(parsed),
+        found: parsed.found || false,
+        tasksCount: parsed.tasks?.length || 0
+      }, correlationId);
       
       // If it's already in the new format, return it
       if ('tasks' in parsed && Array.isArray(parsed.tasks)) {
@@ -363,47 +518,106 @@ When no tasks found, return: {"found": false, "tasks": []}`;
       return { found: false, tasks: [] };
     } catch (e) {
       console.error('extractMultipleTasksFromContent error', e);
+      this.log('error', 'llm-call', 'Multi-task extraction failed with error', { 
+        filePath: sourcePath,
+        error: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined
+      }, correlationId);
       return { found: false, tasks: [] };
     }
   }
 
   // Handle task extraction results (both single and multi-task)
-  private async handleTaskExtraction(extraction: TaskExtraction | TaskExtractionResult, sourceFile: TFile) {
+  private async handleTaskExtraction(extraction: TaskExtraction | TaskExtractionResult, sourceFile: TFile, correlationId?: string) {
     try {
       // Check if it's the new multi-task format
       if ('tasks' in extraction && Array.isArray(extraction.tasks)) {
+        this.log('info', 'task-creation', 'Processing multi-task extraction result', { 
+          filePath: sourceFile.path,
+          tasksCount: extraction.tasks.length
+        }, correlationId);
+
         let createdCount = 0;
         for (const task of extraction.tasks) {
           try {
-            await this.createTaskNote(task, sourceFile);
+            await this.createTaskNote(task, sourceFile, correlationId);
             createdCount++;
           } catch (error) {
             console.error(`Failed to create task note for: ${task.task_title}`, error);
+            this.log('error', 'task-creation', 'Failed to create individual task note', { 
+              filePath: sourceFile.path,
+              taskTitle: task.task_title,
+              error: error instanceof Error ? error.message : String(error)
+            }, correlationId);
           }
         }
+        
+        this.log('info', 'task-creation', 'Multi-task creation completed', { 
+          filePath: sourceFile.path,
+          totalTasks: extraction.tasks.length,
+          createdCount,
+          failedCount: extraction.tasks.length - createdCount
+        }, correlationId);
         
         if (createdCount > 0) {
           new Notice(`Task Extractor: created ${createdCount} task note${createdCount !== 1 ? 's' : ''}`);
         }
       } else {
         // Handle legacy single-task format
-        await this.createTaskNote(extraction as TaskExtraction, sourceFile);
+        this.log('info', 'task-creation', 'Processing single-task extraction result', { 
+          filePath: sourceFile.path,
+          taskTitle: (extraction as TaskExtraction).task_title
+        }, correlationId);
+
+        await this.createTaskNote(extraction as TaskExtraction, sourceFile, correlationId);
         new Notice(`Task Extractor: created task "${(extraction as TaskExtraction).task_title}"`);
       }
     } catch (error) {
       console.error('Error handling task extraction:', error);
+      this.log('error', 'task-creation', 'Task extraction handling failed', { 
+        filePath: sourceFile.path,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      }, correlationId);
       new Notice('Task Extractor: error creating task notes — see console');
     }
   }
 
   // Compose prompt, call LLM, and parse response (legacy method for backward compatibility)
-  private async extractTaskFromContent(content: string, sourcePath: string): Promise<TaskExtraction> {
+  private async extractTaskFromContent(content: string, sourcePath: string, correlationId?: string): Promise<TaskExtraction> {
     const { system, user } = this.buildExtractionPrompt(sourcePath, content);
+
+    this.log('info', 'llm-call', 'LLM prompt constructed for task extraction', { 
+      filePath: sourcePath,
+      systemPromptLength: system.length,
+      userPromptLength: user.length,
+      contentLength: content.length
+    }, correlationId);
 
     try {
       const raw = await this.llmProvider.callLLM(system, user);
+      
+      this.log('info', 'llm-call', 'LLM response received for task extraction', { 
+        filePath: sourcePath,
+        responseLength: raw?.length || 0,
+        responsePreview: raw?.substring(0, 200) || 'null'
+      }, correlationId);
+
       const parsed = this.safeParseJSON(raw);
-      if (!parsed) return { found: false };
+      if (!parsed) {
+        this.log('warn', 'llm-call', 'Failed to parse LLM response as JSON', { 
+          filePath: sourcePath,
+          rawResponse: raw
+        }, correlationId);
+        return { found: false };
+      }
+
+      this.log('info', 'llm-call', 'LLM response parsed successfully', { 
+        filePath: sourcePath,
+        parsedStructure: Object.keys(parsed),
+        found: parsed.found || false,
+        tasksCount: parsed.tasks?.length || (parsed.found ? 1 : 0)
+      }, correlationId);
       
       // Handle new multi-task format
       if (parsed.tasks && Array.isArray(parsed.tasks)) {
@@ -437,6 +651,11 @@ When no tasks found, return: {"found": false, "tasks": []}`;
       };
     } catch (e) {
       console.error('extractTaskFromContent error', e);
+      this.log('error', 'llm-call', 'Task extraction failed with error', { 
+        filePath: sourcePath,
+        error: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined
+      }, correlationId);
       return { found: false };
     }
   }
@@ -476,7 +695,13 @@ When no tasks found, return: {"found": false, "tasks": []}`;
   }
   
   private validateAndNormalizeParsedResult(data: any): TaskExtractionResult | TaskExtraction | null {
-    if (typeof data !== 'object' || data === null) return null;
+    if (typeof data !== 'object' || data === null) {
+      this.log('warn', 'validation', 'Parsed data is not an object', { 
+        dataType: typeof data,
+        data: data
+      });
+      return null;
+    }
     
     // Check for new multi-task format
     if (data.hasOwnProperty('tasks') && Array.isArray(data.tasks)) {
@@ -495,8 +720,19 @@ When no tasks found, return: {"found": false, "tasks": []}`;
             confidence: task.confidence || 'medium',
             ...task
           });
+        } else {
+          this.log('warn', 'validation', 'Invalid task found in multi-task result', { 
+            task: task,
+            taskTitle: task?.task_title
+          });
         }
       }
+
+      this.log('info', 'validation', 'Multi-task validation completed', { 
+        totalTasks: data.tasks.length,
+        validTasks: validTasks.length,
+        invalidTasks: data.tasks.length - validTasks.length
+      });
       
       return {
         found: data.found === true && validTasks.length > 0,
@@ -507,6 +743,11 @@ When no tasks found, return: {"found": false, "tasks": []}`;
     
     // Handle legacy single-task format
     if (data.hasOwnProperty('found')) {
+      this.log('info', 'validation', 'Processing legacy single-task format', { 
+        found: data.found,
+        taskTitle: data.task_title || data.title
+      });
+      
       return {
         found: data.found === true,
         task_title: data.task_title || data.title || '',
@@ -517,6 +758,12 @@ When no tasks found, return: {"found": false, "tasks": []}`;
         ...data
       };
     }
+    
+    this.log('warn', 'validation', 'Parsed data does not match expected format', { 
+      dataKeys: Object.keys(data),
+      hasFound: data.hasOwnProperty('found'),
+      hasTasks: data.hasOwnProperty('tasks')
+    });
     
     return null;
   }
@@ -551,7 +798,7 @@ When no tasks found, return: {"found": false, "tasks": []}`;
   }
 
   // Create TaskNotes–compatible note in tasksFolder
-  private async createTaskNote(extraction: TaskExtraction | ExtractedTask, sourceFile: TFile) {
+  private async createTaskNote(extraction: TaskExtraction | ExtractedTask, sourceFile: TFile, correlationId?: string) {
     const safeTitle = this.makeFilenameSafe(extraction.task_title || 'task');
     let filename = `${safeTitle}.md`;
     
@@ -571,6 +818,14 @@ When no tasks found, return: {"found": false, "tasks": []}`;
       path = `${folder}/${safeTitle}-${counter}.md`;
       counter++;
     }
+
+    this.log('info', 'task-creation', 'Creating task note', { 
+      sourceFile: sourceFile.path,
+      taskTitle: extraction.task_title,
+      taskPath: path,
+      folder,
+      filename: path.split('/').pop()
+    }, correlationId);
 
     // Generate frontmatter using customizable fields
     const lines: string[] = [];
@@ -619,9 +874,22 @@ When no tasks found, return: {"found": false, "tasks": []}`;
 
     try {
       await this.app.vault.create(path, final);
+      this.log('info', 'task-creation', 'Task note created successfully', { 
+        sourceFile: sourceFile.path,
+        taskTitle: extraction.task_title,
+        taskPath: path,
+        contentLength: final.length
+      }, correlationId);
       new Notice(`Task Extractor: created task "${extraction.task_title}"`);
     } catch (e) {
       console.error('Failed to create task note', e);
+      this.log('error', 'task-creation', 'Failed to create task note', { 
+        sourceFile: sourceFile.path,
+        taskTitle: extraction.task_title,
+        taskPath: path,
+        error: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined
+      }, correlationId);
       new Notice('Task Extractor: failed to create task note — see console');
     }
   }

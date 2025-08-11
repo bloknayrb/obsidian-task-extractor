@@ -46,6 +46,10 @@ export interface ExtractorSettings {
   temperature: number;
   timeout: number; // seconds
   retries: number;
+  
+  // Debug settings
+  debugMode: boolean;
+  debugMaxEntries: number;
 }
 
 export interface ExtractedTask {
@@ -116,6 +120,10 @@ export const DEFAULT_SETTINGS: ExtractorSettings = {
   temperature: 0,
   timeout: 30,
   retries: 3,
+  
+  // Debug settings
+  debugMode: false,
+  debugMaxEntries: 1000,
 };
 
 /**
@@ -204,6 +212,14 @@ export function validateSettings(settings: Partial<ExtractorSettings>): Extracto
   }
   if (typeof settings.retries === 'number' && !isNaN(settings.retries)) {
     validated.retries = Math.max(1, Math.min(5, settings.retries));
+  }
+
+  // Validate debug settings
+  if (typeof settings.debugMode === 'boolean') {
+    validated.debugMode = settings.debugMode;
+  }
+  if (typeof settings.debugMaxEntries === 'number' && !isNaN(settings.debugMaxEntries)) {
+    validated.debugMaxEntries = Math.max(100, Math.min(10000, settings.debugMaxEntries));
   }
 
   return validated;

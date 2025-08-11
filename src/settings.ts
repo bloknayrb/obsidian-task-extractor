@@ -135,6 +135,9 @@ export class ExtractorSettingTab extends PluginSettingTab {
     // Frontmatter Customization
     this.addFrontmatterSection(containerEl);
     
+    // Debug Settings
+    this.addDebugSection(containerEl);
+    
     // Advanced Settings
     this.addAdvancedSection(containerEl);
   }
@@ -433,6 +436,36 @@ export class ExtractorSettingTab extends PluginSettingTab {
         .setPlaceholder('Enter custom prompt...')
         .setValue(this.settings.customPrompt)
         .onChange((v) => { this.settings.customPrompt = v; this.debouncedSave(); }));
+  }
+  
+  private addDebugSection(containerEl: HTMLElement): void {
+    containerEl.createEl('h3', { text: 'Debug Settings' });
+    
+    new Setting(containerEl)
+      .setName('Debug Mode')
+      .setDesc('Enable debug logging to monitor plugin activities. Logs are stored in memory only and cleared when Obsidian restarts.')
+      .addToggle(toggle => toggle
+        .setValue(this.settings.debugMode)
+        .onChange((v) => { 
+          this.settings.debugMode = v; 
+          this.debouncedSave();
+          // Refresh display to show/hide debug max entries setting
+          this.display();
+        }));
+    
+    // Only show max entries setting when debug mode is enabled
+    if (this.settings.debugMode) {
+      this.addSliderWithInput(
+        containerEl,
+        'Max Debug Entries',
+        'Maximum number of debug log entries to keep in memory. Older entries are automatically removed.',
+        this.settings.debugMaxEntries,
+        100,
+        10000,
+        100,
+        (v) => { this.settings.debugMaxEntries = v; this.debouncedSave(); }
+      );
+    }
   }
   
   private addAdvancedSection(containerEl: HTMLElement): void {
