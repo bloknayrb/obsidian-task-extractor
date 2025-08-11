@@ -21,15 +21,20 @@
   "author": "Bryan",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^16.11.6",
-    "@typescript-eslint/eslint-plugin": "5.29.0",
-    "@typescript-eslint/parser": "5.29.0",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.1",
+    "@types/codemirror": "^5.60.16",
+    "@types/node": "^20.19.10",
+    "@typescript-eslint/eslint-plugin": "^8.39.1",
+    "@typescript-eslint/parser": "^8.39.1",
     "builtin-modules": "3.3.0",
-    "esbuild": "0.17.3",
+    "esbuild": "^0.25.8",
+    "eslint": "^9.33.0",
+    "globals": "^16.3.0",
     "jsdom": "^26.1.0",
     "obsidian": "latest",
     "tslib": "2.4.0",
-    "typescript": "4.7.4",
-    "vitest": "^1.6.1"
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   }
 }

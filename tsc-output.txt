@@ -1,0 +1,2 @@
+node_modules/obsidian/obsidian.d.ts(6,39): error TS2307: Cannot find module '@codemirror/state' or its corresponding type declarations.
+node_modules/obsidian/obsidian.d.ts(7,40): error TS2307: Cannot find module '@codemirror/view' or its corresponding type declarations.

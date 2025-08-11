@@ -1,0 +1,60 @@
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+[7m[1m[36m RUN [39m[22m[27m [36mv1.6.1[39m [90mC:/Users/bkolb/Documents/GitHub/obsidian-task-extractor[39m
+
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mslider-input synchronization[2m > [22mshould test slider-input functionality exists
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mslider-input synchronization[2m > [22mshould validate that slider-input method accepts correct parameters
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mslider-input synchronization[2m > [22mshould test synchronization logic conceptually
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mslider-input synchronization[2m > [22mshould test bidirectional synchronization concept
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22minput validation[2m > [22mshould test validation logic conceptually
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22minput validation[2m > [22mshould test bounds checking
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22minput validation[2m > [22mshould test NaN handling
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22minput validation[2m > [22mshould test validation on blur concept
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mfrontmatter field validation[2m > [22mshould validate frontmatter field names
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mfrontmatter field validation[2m > [22mshould show validation feedback for invalid field names
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mnumeric input validation helper[2m > [22mshould validate numbers within bounds
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mnumeric input validation helper[2m > [22mshould handle values below minimum
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mnumeric input validation helper[2m > [22mshould handle values above maximum
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mnumeric input validation helper[2m > [22mshould handle NaN values
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mdebug settings UI[2m > [22mshould have addDebugSection method
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mdebug settings UI[2m > [22mshould test debug mode toggle functionality
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mdebug settings UI[2m > [22mshould validate debug max entries bounds
+ [32mΓ£ô[39m test/settings.test.ts[2m > [22mSettings - Enhanced Slider Components[2m > [22mdebug settings UI[2m > [22mshould test debug settings persistence concept
+ [32mΓ£ô[39m test/task-processor.test.ts[2m > [22mTaskProcessor - Frontmatter Field Configuration[2m > [22mconfigured frontmatter field usage[2m > [22mshould use configured frontmatter field instead of hardcoded "Type"
+ [32mΓ£ô[39m test/task-processor.test.ts[2m > [22mTaskProcessor - Frontmatter Field Configuration[2m > [22mconfigured frontmatter field usage[2m > [22mshould not process files when custom field does not match
+ [32mΓ£ô[39m test/task-processor.test.ts[2m > [22mTaskProcessor - Frontmatter Field Configuration[2m > [22mconfigured frontmatter field usage[2m > [22mshould fallback to "Type" field when configured field is invalid
+ [32mΓ£ô[39m test/task-processor.test.ts[2m > [22mTaskProcessor - Frontmatter Field Configuration[2m > [22mconfigured frontmatter field usage[2m > [22mshould handle case-insensitive comparison with custom field
+ [32mΓ£ô[39m test/task-processor.test.ts[2m > [22mTaskProcessor - Frontmatter Field Configuration[2m > [22mgetUnprocessedFiles with custom frontmatter field[2m > [22mshould filter files using configured frontmatter field
+ [32mΓ£ô[39m test/task-processor.test.ts[2m > [22mTaskProcessor - Frontmatter Field Configuration[2m > [22mfrontmatter field validation[2m > [22mshould validate frontmatter field names
+ [32mΓ£ô[39m test/task-processor.test.ts[2m > [22mTaskProcessor - Frontmatter Field Configuration[2m > [22mbackward compatibility[2m > [22mshould work with existing configurations that do not specify frontmatter field
+ [32mΓ£ô[39m test/integration.test.ts[2m > [22mIntegration Tests - Complete Workflow[2m > [22mend-to-end processing with custom frontmatter field[2m > [22mshould process file with custom frontmatter field configuration
+ [32mΓ£ô[39m test/integration.test.ts[2m > [22mIntegration Tests - Complete Workflow[2m > [22mend-to-end processing with custom frontmatter field[2m > [22mshould not process file when custom field does not match trigger types
+ [32mΓ£ô[39m test/integration.test.ts[2m > [22mIntegration Tests - Complete Workflow[2m > [22msettings persistence and loading[2m > [22mshould validate settings correctly
+ [32mΓ£ô[39m test/integration.test.ts[2m > [22mIntegration Tests - Complete Workflow[2m > [22msettings persistence and loading[2m > [22mshould load settings with validation
+ [32mΓ£ô[39m test/integration.test.ts[2m > [22mIntegration Tests - Complete Workflow[2m > [22mbackward compatibility[2m > [22mshould work with existing configurations without custom frontmatter field
+ [32mΓ£ô[39m test/integration.test.ts[2m > [22mIntegration Tests - Complete Workflow[2m > [22merror handling and validation[2m > [22mshould handle corrupted settings gracefully
+ [32mΓ£ô[39m test/integration.test.ts[2m > [22mIntegration Tests - Complete Workflow[2m > [22merror handling and validation[2m > [22mshould handle missing owner name gracefully
+ [32mΓ£ô[39m test/debug-integration.test.ts[2m > [22mTaskProcessor Debug Integration[2m > [22mshould log file processing events when debug is enabled
+ [32mΓ£ô[39m test/debug-integration.test.ts[2m > [22mTaskProcessor Debug Integration[2m > [22mshould not log when debug is disabled
+ [32mΓ£ô[39m test/debug-integration.test.ts[2m > [22mTaskProcessor Debug Integration[2m > [22mshould log file filtering decisions
+ [32mΓ£ô[39m test/debug-integration.test.ts[2m > [22mTaskProcessor Debug Integration[2m > [22mshould log LLM call events
+ [32mΓ£ô[39m test/debug-integration.test.ts[2m > [22mTaskProcessor Debug Integration[2m > [22mshould use correlation IDs to track related operations
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mfrontmatter field configuration[2m > [22mshould save and load triggerFrontmatterField correctly
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mfrontmatter field configuration[2m > [22mshould default to "Type" for backward compatibility
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mfrontmatter field configuration[2m > [22mshould validate YAML key format
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mfrontmatter field configuration[2m > [22mshould accept valid YAML keys with underscores and hyphens
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mfrontmatter field configuration[2m > [22mshould reject keys with problematic dot patterns
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mfrontmatter field configuration[2m > [22mshould reject empty or whitespace-only field names
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mnumeric input validation[2m > [22mshould validate maxTokens within bounds
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mnumeric input validation[2m > [22mshould clamp maxTokens to minimum bound
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mnumeric input validation[2m > [22mshould clamp maxTokens to maximum bound
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mnumeric input validation[2m > [22mshould validate temperature within bounds
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mnumeric input validation[2m > [22mshould clamp temperature to bounds
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mnumeric input validation[2m > [22mshould handle NaN values gracefully
+ [32mΓ£ô[39m test/types.test.ts[2m > [22mTypes - Settings Validation[2m > [22mbackward compatibility[2m > [22mshould preserve existing configurations
+
+[2m Test Files [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m      Tests [22m [1m[32m50 passed[39m[22m[90m (50)[39m
+[2m   Start at [22m 13:48:49
+[2m   Duration [22m 14.45s[2m (transform 330ms, setup 173ms, collect 460ms, tests 103ms, environment 10.25s, prepare 1.98s)[22m
+
