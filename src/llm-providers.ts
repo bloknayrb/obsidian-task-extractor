@@ -1,4 +1,4 @@
-'''/*
+/*
  * LLM Provider implementations and service detection
  */
 
@@ -197,7 +197,7 @@ export class LLMProviderManager {
     });
     
     // Check if API key is required for cloud providers (only notify once per provider)
-    if (['openai', 'anthropic'].includes(provider) && !this.settings.apiKey) {
+    if (['openai', 'anthropic'].includes(provider) && (!this.settings.apiKey || this.settings.apiKey.trim().length === 0)) {
       const notificationKey = `${provider}-no-api-key`;
       if (!this.apiKeyMissingNotified.has(notificationKey)) {
         // Note: Notice would need to be passed in or handled by caller
@@ -212,8 +212,19 @@ export class LLMProviderManager {
     }
     
     // Clear notification flag if API key is present
-    if (this.settings.apiKey) {
+    if (this.settings.apiKey && this.settings.apiKey.trim().length > 0) {
       this.apiKeyMissingNotified.delete(`${provider}-no-api-key`);
+    }
+    
+    // Validate configuration before making requests
+    const configValidation = this.validateProviderConfig(provider);
+    if (!configValidation.valid) {
+      this.debugLogger?.log('error', 'llm-call', `Configuration validation failed for ${provider}`, {
+        provider,
+        errors: configValidation.errors
+      }, correlationId);
+      console.error(`Task Extractor: ${provider} configuration errors:`, configValidation.errors.join(', '));
+      return null;
     }
     
     // Try primary provider with retries
@@ -375,15 +386,34 @@ export class LLMProviderManager {
       if (!resp.ok) {
         const text = await resp.text();
         console.error('OpenAI error', resp.status, text);
+        
+        // Provide specific error messages based on status codes  
+        let errorMessage = `OpenAI API error: ${resp.status} ${resp.statusText}`;
+        if (resp.status === 401) {
+          errorMessage += '. Check that your OpenAI API key is valid and properly configured.';
+        } else if (resp.status === 400) {
+          errorMessage += '. Request format may be invalid - check model name and request parameters.';
+        } else if (resp.status === 429) {
+          errorMessage += '. Rate limit exceeded - please try again later.';
+        } else if (resp.status === 403) {
+          errorMessage += '. Access denied - check API key permissions.';
+        }
+        
         this.debugLogger?.log('error', 'llm-call', `OpenAI API error: ${resp.status}`, {
           provider: 'openai',
           model,
+          endpoint,
           status: resp.status,
           statusText: resp.statusText,
           error: text,
-          processingTime
+          processingTime,
+          requestBody: {
+            model,
+            temperature: this.settings.temperature,
+            max_tokens: this.settings.maxTokens
+          }
         }, correlationId);
-        throw new Error(`OpenAI API error: ${resp.status} ${resp.statusText}`);
+        throw new Error(errorMessage);
       }
       
       const json = await resp.json();
@@ -416,7 +446,20 @@ export class LLMProviderManager {
   }
 
   private async callAnthropic(systemPrompt: string, userPrompt: string, correlationId?: string): Promise<string | null> {
-    const endpoint = this.settings.anthropicUrl || 'https://api.anthropic.com/v1/messages';
+    // Validate and sanitize Anthropic URL - ensure it's the correct endpoint
+    let endpoint = this.settings.anthropicUrl || 'https://api.anthropic.com/v1/messages';
+    
+    // Fix common endpoint mistakes
+    if (endpoint.includes('anthropic.com') && !endpoint.includes('/v1/messages')) {
+      endpoint = 'https://api.anthropic.com/v1/messages';
+      console.warn('Task Extractor: Fixed invalid Anthropic URL to use correct /v1/messages endpoint');
+      this.debugLogger?.log('warn', 'llm-call', 'Fixed invalid Anthropic URL', {
+        provider: 'anthropic',
+        originalUrl: this.settings.anthropicUrl,
+        fixedUrl: endpoint
+      }, correlationId);
+    }
+    
     const model = this.settings.model || 'claude-3-sonnet-20240229';
     const requestBody = {
       model,
@@ -461,15 +504,32 @@ export class LLMProviderManager {
       if (!resp.ok) {
         const text = await resp.text();
         console.error('Anthropic error', resp.status, text);
+        
+        // Provide specific error messages based on status codes
+        let errorMessage = `Anthropic API error: ${resp.status} ${resp.statusText}`;
+        if (resp.status === 404) {
+          errorMessage += '. Check that anthropicUrl setting uses the correct endpoint: https://api.anthropic.com/v1/messages';
+        } else if (resp.status === 401 || resp.status === 403) {
+          errorMessage += '. Check that your Anthropic API key is valid and has proper permissions.';
+        } else if (resp.status === 400) {
+          errorMessage += '. Request format may be invalid - check model name and request parameters.';
+        }
+        
         this.debugLogger?.log('error', 'llm-call', `Anthropic API error: ${resp.status}`, {
           provider: 'anthropic',
           model,
+          endpoint,
           status: resp.status,
           statusText: resp.statusText,
           error: text,
-          processingTime
+          processingTime,
+          requestBody: {
+            model,
+            max_tokens: this.settings.maxTokens,
+            temperature: this.settings.temperature
+          }
         }, correlationId);
-        throw new Error(`Anthropic API error: ${resp.status} ${resp.statusText}`);
+        throw new Error(errorMessage);
       }
       
       const json = await resp.json();
@@ -869,6 +929,57 @@ export class LLMProviderManager {
     };
     
     return defaults[provider as keyof typeof defaults] || [];
+  }
+
+  // Configuration validation method
+  private validateProviderConfig(provider: string): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    
+    switch (provider) {
+      case 'openai':
+        if (!this.settings.apiKey || this.settings.apiKey.trim().length === 0) {
+          errors.push('OpenAI API key is missing');
+        } else if (!this.settings.apiKey.startsWith('sk-')) {
+          errors.push('OpenAI API key should start with "sk-"');
+        }
+        
+        if (!this.settings.model || this.settings.model.trim().length === 0) {
+          errors.push('OpenAI model is not specified');
+        }
+        break;
+        
+      case 'anthropic':
+        if (!this.settings.apiKey || this.settings.apiKey.trim().length === 0) {
+          errors.push('Anthropic API key is missing');
+        }
+        
+        const anthropicUrl = this.settings.anthropicUrl || 'https://api.anthropic.com/v1/messages';
+        if (!anthropicUrl.includes('api.anthropic.com/v1/messages')) {
+          errors.push('Anthropic URL must point to https://api.anthropic.com/v1/messages');
+        }
+        
+        if (!this.settings.model || this.settings.model.trim().length === 0) {
+          errors.push('Anthropic model is not specified');
+        }
+        break;
+        
+      case 'ollama':
+        if (!this.settings.ollamaUrl || this.settings.ollamaUrl.trim().length === 0) {
+          errors.push('Ollama URL is missing');
+        }
+        break;
+        
+      case 'lmstudio':
+        if (!this.settings.lmstudioUrl || this.settings.lmstudioUrl.trim().length === 0) {
+          errors.push('LM Studio URL is missing');
+        }
+        break;
+        
+      default:
+        errors.push(`Unsupported provider: ${provider}`);
+    }
+    
+    return { valid: errors.length === 0, errors };
   }
 
   // Utility methods

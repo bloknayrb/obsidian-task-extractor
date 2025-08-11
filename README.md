@@ -445,11 +445,20 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 📈 Changelog
 
-### v2.1.4 - Anthropic URL Configuration (2025-08-11)
+### v2.1.4 - Enhanced API Error Handling (2025-08-11)
 
-- **New Feature**: Added a setting to configure the Anthropic API URL, allowing the use of proxies.
-- **Bug Fix**: Resolved a 404 error when calling the Anthropic API due to network configurations.
-- **Improved Robustness**: Enhanced the reliability of fetching cloud models by adding error handling and fallback to default models.
+#### 🔧 Bug Fixes & Improvements
+- **Enhanced API Key Validation**: Improved validation for empty/whitespace-only API keys
+- **Automatic URL Correction**: Auto-detects and fixes invalid Anthropic URLs to use correct `/v1/messages` endpoint  
+- **Better Error Messages**: Specific error messages for different HTTP status codes (404, 401, 400, 403, 429)
+- **Configuration Validation**: Pre-flight validation prevents API calls with invalid configurations
+- **OpenAI Key Format Checking**: Validates that OpenAI keys start with "sk-" prefix
+
+#### 🛡️ Technical Improvements  
+- **Comprehensive Error Context**: Enhanced debug logging with request details and configuration info
+- **Actionable Error Messages**: Error messages now include specific steps to fix configuration issues
+- **Robust Configuration Handling**: Validates provider settings before making API requests
+- **Improved Debugging**: Better error tracking and correlation for troubleshooting API issues
 
 ### v2.1.2 - Performance-Optimized Debug Logging (2025-01-08)
 

@@ -51,11 +51,12 @@ Key components:
 ### Security Posture
 - **Zero vulnerabilities**: Regular `npm audit` confirms no known security issues
 - **Dependency management**: All dependencies kept up-to-date with security patches
-- **API key protection**: Sensitive credentials are masked in debug logs and never committed
+- **API key protection**: Enhanced credential validation and masking in debug logs
 - **Input sanitization**: All user inputs are validated before processing
 - **Secure storage**: Uses Obsidian's secure storage APIs for configuration
+- **Enhanced API security**: Pre-flight validation prevents malformed API requests
 
-### Current Dependency Versions (as of v2.1.3)
+### Current Dependency Versions (as of v2.1.4)
 - **esbuild**: ^0.25.8 (critical security fixes included)
 - **vite**: 7.1.1 (latest stable)
 - **vitest**: ^3.2.4 (comprehensive testing framework)
@@ -67,6 +68,7 @@ Key components:
 - **Type safety**: Full TypeScript coverage with CodeMirror declarations
 - **Testing**: 50+ tests with Vitest ensuring reliability
 - **Security auditing**: Automated dependency vulnerability scanning
+- **Enhanced error handling**: Improved API error validation and debugging
 
 ## Development Notes
 
