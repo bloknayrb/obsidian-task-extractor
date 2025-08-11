@@ -39,6 +39,84 @@ export class ExtractorSettingTab extends PluginSettingTab {
     super.hide();
   }
 
+  /**
+   * Validates frontmatter field name according to YAML key format
+   * Returns a valid field name or defaults to "Type"
+   */
+  private validateFrontmatterField(fieldName: string): string {
+    // Check if empty
+    if (!fieldName || fieldName.length === 0) {
+      return 'Type';
+    }
+
+    // YAML key validation: must start with letter or underscore, 
+    // can contain letters, numbers, underscores, hyphens, and dots
+    const yamlKeyPattern = /^[a-zA-Z_][a-zA-Z0-9_.-]*$/;
+    
+    if (!yamlKeyPattern.test(fieldName)) {
+      return 'Type';
+    }
+
+    // Additional checks for problematic characters
+    if (fieldName.includes('..') || fieldName.startsWith('.') || fieldName.endsWith('.')) {
+      return 'Type';
+    }
+
+    return fieldName;
+  }
+
+  /**
+   * Shows validation feedback to the user
+   */
+  private showValidationFeedback(inputEl: HTMLInputElement, message: string): void {
+    // Visual feedback
+    inputEl.style.borderColor = '#ff6b6b';
+    inputEl.style.backgroundColor = 'rgba(255, 107, 107, 0.1)';
+    
+    // Create tooltip or use title attribute
+    inputEl.title = message;
+    
+    // Reset styling after delay
+    setTimeout(() => {
+      inputEl.style.borderColor = '';
+      inputEl.style.backgroundColor = '';
+      inputEl.title = '';
+    }, 3000);
+  }
+
+  /**
+   * Validates and clamps numeric values with enhanced error handling
+   */
+  private validateNumericInput(value: number, min: number, max: number, defaultValue: number): { value: number; isValid: boolean; message?: string } {
+    // Check for NaN
+    if (isNaN(value)) {
+      return { 
+        value: defaultValue, 
+        isValid: false, 
+        message: `Invalid number. Using default value ${defaultValue}.` 
+      };
+    }
+
+    // Check bounds
+    if (value < min) {
+      return { 
+        value: min, 
+        isValid: false, 
+        message: `Value too low. Minimum is ${min}.` 
+      };
+    }
+
+    if (value > max) {
+      return { 
+        value: max, 
+        isValid: false, 
+        message: `Value too high. Maximum is ${max}.` 
+      };
+    }
+
+    return { value, isValid: true };
+  }
+
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
@@ -227,18 +305,20 @@ export class ExtractorSettingTab extends PluginSettingTab {
           }));
     }
     
-    new Setting(containerEl)
-      .setName('Model Refresh Interval')
-      .setDesc('How often to check for available models (minutes).')
-      .addSlider(slider => slider
-        .setLimits(1, 60, 1)
-        .setValue(this.settings.localModelRefreshInterval)
-        .setDynamicTooltip()
-        .onChange((v) => { 
-          this.settings.localModelRefreshInterval = v; 
-          this.debouncedSave();
-          // Note: Service monitoring now uses on-demand detection
-        }));
+    this.addSliderWithInput(
+      containerEl,
+      'Model Refresh Interval',
+      'How often to check for available models (minutes).',
+      this.settings.localModelRefreshInterval,
+      1,
+      60,
+      1,
+      (v) => { 
+        this.settings.localModelRefreshInterval = v; 
+        this.debouncedSave();
+        // Note: Service monitoring now uses on-demand detection
+      }
+    );
   }
   
   private addProcessingSection(containerEl: HTMLElement): void {
@@ -267,6 +347,24 @@ export class ExtractorSettingTab extends PluginSettingTab {
         .onChange((v) => { 
           this.settings.triggerTypes = v.split(',').map(s => s.trim()).filter(s => s.length > 0);
           this.debouncedSave(); 
+        }));
+    
+    new Setting(containerEl)
+      .setName('Frontmatter field for filtering')
+      .setDesc('The frontmatter field name to use for filtering notes (e.g., "Type", "Category", "NoteType").')
+      .addText(text => text
+        .setPlaceholder('Type')
+        .setValue(this.settings.triggerFrontmatterField)
+        .onChange((v) => { 
+          const validatedField = this.validateFrontmatterField(v.trim());
+          this.settings.triggerFrontmatterField = validatedField; 
+          this.debouncedSave(); 
+          
+          // Update the input field if validation changed the value
+          if (validatedField !== v.trim()) {
+            text.setValue(validatedField);
+            this.showValidationFeedback(text.inputEl, 'Invalid field name. Using default "Type".');
+          }
         }));
     
     new Setting(containerEl)
@@ -340,43 +438,161 @@ export class ExtractorSettingTab extends PluginSettingTab {
   private addAdvancedSection(containerEl: HTMLElement): void {
     containerEl.createEl('h3', { text: 'Advanced Settings' });
     
-    new Setting(containerEl)
-      .setName('Max Tokens')
-      .setDesc('Maximum tokens to generate.')
-      .addSlider(slider => slider
-        .setLimits(100, 2000, 50)
-        .setValue(this.settings.maxTokens)
-        .setDynamicTooltip()
-        .onChange((v) => { this.settings.maxTokens = v; this.debouncedSave(); }));
+    this.addSliderWithInput(
+      containerEl,
+      'Max Tokens',
+      'Maximum tokens to generate.',
+      this.settings.maxTokens,
+      100,
+      2000,
+      50,
+      (v) => { this.settings.maxTokens = v; this.debouncedSave(); }
+    );
     
-    new Setting(containerEl)
-      .setName('Temperature')
-      .setDesc('Creativity level (0 = deterministic, 1 = creative).')
-      .addSlider(slider => slider
-        .setLimits(0, 1, 0.1)
-        .setValue(this.settings.temperature)
-        .setDynamicTooltip()
-        .onChange((v) => { this.settings.temperature = v; this.debouncedSave(); }));
+    this.addSliderWithInput(
+      containerEl,
+      'Temperature',
+      'Creativity level (0 = deterministic, 1 = creative).',
+      this.settings.temperature,
+      0,
+      1,
+      0.1,
+      (v) => { this.settings.temperature = v; this.debouncedSave(); }
+    );
     
-    new Setting(containerEl)
-      .setName('Timeout (seconds)')
-      .setDesc('Request timeout for LLM calls.')
-      .addSlider(slider => slider
-        .setLimits(10, 120, 5)
-        .setValue(this.settings.timeout)
-        .setDynamicTooltip()
-        .onChange((v) => { this.settings.timeout = v; this.debouncedSave(); }));
+    this.addSliderWithInput(
+      containerEl,
+      'Timeout (seconds)',
+      'Request timeout for LLM calls.',
+      this.settings.timeout,
+      10,
+      120,
+      5,
+      (v) => { this.settings.timeout = v; this.debouncedSave(); }
+    );
     
-    new Setting(containerEl)
-      .setName('Retry Attempts')
-      .setDesc('Number of retry attempts for failed requests.')
-      .addSlider(slider => slider
-        .setLimits(1, 5, 1)
-        .setValue(this.settings.retries)
-        .setDynamicTooltip()
-        .onChange((v) => { this.settings.retries = v; this.debouncedSave(); }));
+    this.addSliderWithInput(
+      containerEl,
+      'Retry Attempts',
+      'Number of retry attempts for failed requests.',
+      this.settings.retries,
+      1,
+      5,
+      1,
+      (v) => { this.settings.retries = v; this.debouncedSave(); }
+    );
   }
   
+  /**
+   * Helper method to create an enhanced slider with input field
+   * Provides bidirectional synchronization between slider and number input
+   */
+  private addSliderWithInput(
+    containerEl: HTMLElement,
+    name: string,
+    desc: string,
+    value: number,
+    min: number,
+    max: number,
+    step: number,
+    onChange: (value: number) => void
+  ): void {
+    const setting = new Setting(containerEl)
+      .setName(name)
+      .setDesc(desc);
+
+    // Create container for slider and input
+    const controlContainer = setting.controlEl.createDiv({ cls: 'task-extractor-slider-input-container' });
+    
+    // Create slider element
+    const sliderEl = controlContainer.createEl('input', {
+      type: 'range',
+      cls: 'task-extractor-slider'
+    }) as HTMLInputElement;
+    
+    sliderEl.min = min.toString();
+    sliderEl.max = max.toString();
+    sliderEl.step = step.toString();
+    sliderEl.value = value.toString();
+    
+    // Create number input element
+    const inputEl = controlContainer.createEl('input', {
+      type: 'number',
+      cls: 'task-extractor-number-input'
+    }) as HTMLInputElement;
+    
+    inputEl.min = min.toString();
+    inputEl.max = max.toString();
+    inputEl.step = step.toString();
+    inputEl.value = value.toString();
+    
+    // Slider change handler
+    sliderEl.addEventListener('input', () => {
+      const newValue = parseFloat(sliderEl.value);
+      const validation = this.validateNumericInput(newValue, min, max, value);
+      
+      // Update input field to match slider
+      inputEl.value = validation.value.toString();
+      
+      // Call onChange callback
+      onChange(validation.value);
+    });
+    
+    // Input field change handler
+    inputEl.addEventListener('input', () => {
+      const newValue = parseFloat(inputEl.value);
+      const validation = this.validateNumericInput(newValue, min, max, value);
+      
+      // Update input field if value was clamped or invalid
+      if (!validation.isValid) {
+        inputEl.value = validation.value.toString();
+        
+        // Show validation feedback with message
+        this.showValidationFeedback(inputEl, validation.message || 'Invalid value');
+      }
+      
+      // Update slider to match input
+      sliderEl.value = validation.value.toString();
+      
+      // Call onChange callback
+      onChange(validation.value);
+    });
+    
+    // Input field blur handler for final validation
+    inputEl.addEventListener('blur', () => {
+      const newValue = parseFloat(inputEl.value);
+      const validation = this.validateNumericInput(newValue, min, max, value);
+      
+      // Ensure final value is valid
+      inputEl.value = validation.value.toString();
+      sliderEl.value = validation.value.toString();
+      
+      // Show feedback if value was corrected
+      if (!validation.isValid) {
+        this.showValidationFeedback(inputEl, validation.message || 'Value corrected');
+      }
+    });
+    
+    // Add styling for better visual layout
+    controlContainer.style.display = 'flex';
+    controlContainer.style.alignItems = 'center';
+    controlContainer.style.gap = '12px';
+    controlContainer.style.width = '100%';
+    
+    sliderEl.style.flex = '1';
+    sliderEl.style.minWidth = '120px';
+    sliderEl.style.height = '20px';
+    
+    inputEl.style.width = '80px';
+    inputEl.style.textAlign = 'center';
+    inputEl.style.padding = '4px 8px';
+    inputEl.style.border = '1px solid var(--background-modifier-border)';
+    inputEl.style.borderRadius = '4px';
+    inputEl.style.backgroundColor = 'var(--background-primary)';
+    inputEl.style.color = 'var(--text-normal)';
+    inputEl.style.fontSize = '13px';
+  }
+
   private updateServiceStatus(statusEl: HTMLElement): void {
     statusEl.empty();
     

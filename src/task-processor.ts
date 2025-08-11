@@ -43,18 +43,35 @@ export class TaskProcessor {
         return;
       }
 
+      // Validate settings at runtime to handle corrupted configurations
+      if (!this.settings.triggerTypes || !Array.isArray(this.settings.triggerTypes) || this.settings.triggerTypes.length === 0) {
+        console.warn('TaskExtractor: Invalid trigger types configuration, skipping processing');
+        this.processingFiles.delete(file.path);
+        return;
+      }
+
       // check already processed
-      const processedValue = this.getFrontmatterValue(front, this.settings.processedFrontmatterKey);
+      const processedKey = this.settings.processedFrontmatterKey || 'taskExtractor.processed';
+      const processedValue = this.getFrontmatterValue(front, processedKey);
       if (processedValue === true || processedValue === 'true') {
         // already processed
         this.processingFiles.delete(file.path);
         return;
       }
 
-      const typeRaw = this.getFrontmatterValue(front, 'Type') || '';
+      // Use validated frontmatter field with fallback to "Type"
+      const frontmatterField = this.validateFrontmatterField(this.settings.triggerFrontmatterField);
+      const typeRaw = this.getFrontmatterValue(front, frontmatterField) || '';
       const type = ('' + typeRaw).toLowerCase();
       const accepted = this.settings.triggerTypes.map(t => t.toLowerCase());
       if (!accepted.includes(type)) {
+        this.processingFiles.delete(file.path);
+        return;
+      }
+
+      // Validate owner name is configured
+      if (!this.settings.ownerName || this.settings.ownerName.trim().length === 0) {
+        console.warn('TaskExtractor: Owner name not configured, skipping processing');
         this.processingFiles.delete(file.path);
         return;
       }
@@ -102,7 +119,9 @@ export class TaskProcessor {
       const front = cache?.frontmatter;
       if (!front) continue;
       
-      const typeRaw = this.getFrontmatterValue(front, 'Type') || '';
+      // Use validated frontmatter field with fallback to "Type"
+      const frontmatterField = this.validateFrontmatterField(this.settings.triggerFrontmatterField);
+      const typeRaw = this.getFrontmatterValue(front, frontmatterField) || '';
       const type = ('' + typeRaw).toLowerCase();
       const accepted = this.settings.triggerTypes.map(t => t.toLowerCase());
       const processedValue = this.getFrontmatterValue(front, this.settings.processedFrontmatterKey);
@@ -266,7 +285,15 @@ export class TaskProcessor {
   private async createTaskNote(extraction: TaskExtraction, sourceFile: TFile) {
     const safeTitle = this.makeFilenameSafe(extraction.task_title || 'task');
     let filename = `${safeTitle}.md`;
-    let folder = this.settings.tasksFolder.trim() || 'Tasks';
+    
+    // Validate and sanitize tasks folder
+    let folder = this.settings.tasksFolder?.trim() || 'Tasks';
+    if (!folder || folder.length === 0) {
+      folder = 'Tasks';
+    }
+    // Remove any potentially problematic characters from folder name
+    folder = folder.replace(/[\\/:*?"<>|]/g, '');
+    
     let path = `${folder}/${filename}`;
 
     // If file exists, append counter
@@ -332,6 +359,37 @@ export class TaskProcessor {
 
   private makeFilenameSafe(title: string) {
     return title.replace(/[\\/:*?"<>|#%{}\\^~\[\]`;'@&=+]/g, '').replace(/\s+/g, '-').slice(0, 120);
+  }
+
+  /**
+   * Validates frontmatter field name with graceful fallback to "Type"
+   * Ensures the field name is valid for YAML and safe to use
+   */
+  private validateFrontmatterField(fieldName: string): string {
+    // Check if empty or undefined
+    if (!fieldName || typeof fieldName !== 'string' || fieldName.trim().length === 0) {
+      console.warn('TaskExtractor: Empty frontmatter field name, falling back to "Type"');
+      return 'Type';
+    }
+
+    const trimmed = fieldName.trim();
+
+    // YAML key validation: must start with letter or underscore, 
+    // can contain letters, numbers, underscores, hyphens, and dots
+    const yamlKeyPattern = /^[a-zA-Z_][a-zA-Z0-9_.-]*$/;
+    
+    if (!yamlKeyPattern.test(trimmed)) {
+      console.warn(`TaskExtractor: Invalid frontmatter field name "${trimmed}", falling back to "Type"`);
+      return 'Type';
+    }
+
+    // Additional checks for problematic patterns
+    if (trimmed.includes('..') || trimmed.startsWith('.') || trimmed.endsWith('.')) {
+      console.warn(`TaskExtractor: Problematic frontmatter field name "${trimmed}", falling back to "Type"`);
+      return 'Type';
+    }
+
+    return trimmed;
   }
 
   // Cleanup method

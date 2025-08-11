@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => TaskExtractorPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // src/types.ts
 var DEFAULT_FRONTMATTER_FIELDS = [
@@ -55,6 +55,8 @@ var DEFAULT_SETTINGS = {
   ownerName: "Bryan Kolb",
   processOnUpdate: false,
   triggerTypes: ["email", "meetingnote", "meeting note", "meeting notes"],
+  triggerFrontmatterField: "Type",
+  // default to "Type" for backward compatibility
   // Customizable frontmatter
   frontmatterFields: DEFAULT_FRONTMATTER_FIELDS,
   customPrompt: "",
@@ -64,6 +66,78 @@ var DEFAULT_SETTINGS = {
   timeout: 30,
   retries: 3
 };
+function validateSettings(settings) {
+  const validated = { ...DEFAULT_SETTINGS };
+  if (settings.provider && ["openai", "anthropic", "ollama", "lmstudio"].includes(settings.provider)) {
+    validated.provider = settings.provider;
+  }
+  if (typeof settings.apiKey === "string")
+    validated.apiKey = settings.apiKey;
+  if (typeof settings.model === "string")
+    validated.model = settings.model;
+  if (typeof settings.ollamaUrl === "string")
+    validated.ollamaUrl = settings.ollamaUrl;
+  if (typeof settings.lmstudioUrl === "string")
+    validated.lmstudioUrl = settings.lmstudioUrl;
+  if (typeof settings.tasksFolder === "string" && settings.tasksFolder.trim()) {
+    validated.tasksFolder = settings.tasksFolder.trim();
+  }
+  if (typeof settings.ownerName === "string" && settings.ownerName.trim()) {
+    validated.ownerName = settings.ownerName.trim();
+  }
+  if (typeof settings.customPrompt === "string")
+    validated.customPrompt = settings.customPrompt;
+  if (typeof settings.processedFrontmatterKey === "string") {
+    const key = settings.processedFrontmatterKey.trim();
+    const parts = key.split(".");
+    const yamlKeyPattern = /^[a-zA-Z_][a-zA-Z0-9_-]*$/;
+    const isValid = parts.every((part) => part && yamlKeyPattern.test(part));
+    if (isValid) {
+      validated.processedFrontmatterKey = key;
+    }
+  }
+  if (typeof settings.triggerFrontmatterField === "string") {
+    const field = settings.triggerFrontmatterField.trim();
+    const yamlKeyPattern = /^[a-zA-Z_][a-zA-Z0-9_.-]*$/;
+    if (field && yamlKeyPattern.test(field) && !field.includes("..") && !field.startsWith(".") && !field.endsWith(".")) {
+      validated.triggerFrontmatterField = field;
+    }
+  }
+  if (typeof settings.linkBack === "boolean")
+    validated.linkBack = settings.linkBack;
+  if (typeof settings.processOnUpdate === "boolean")
+    validated.processOnUpdate = settings.processOnUpdate;
+  if (Array.isArray(settings.triggerTypes)) {
+    const validTypes = settings.triggerTypes.filter((t) => typeof t === "string" && t.trim().length > 0).map((t) => t.trim());
+    if (validTypes.length > 0) {
+      validated.triggerTypes = validTypes;
+    }
+  }
+  if (Array.isArray(settings.frontmatterFields)) {
+    const validFields = settings.frontmatterFields.filter(
+      (f) => f && typeof f.key === "string" && f.key.trim().length > 0 && typeof f.defaultValue === "string" && typeof f.type === "string" && ["text", "date", "select", "boolean"].includes(f.type) && typeof f.required === "boolean"
+    );
+    if (validFields.length > 0) {
+      validated.frontmatterFields = validFields;
+    }
+  }
+  if (typeof settings.localModelRefreshInterval === "number" && !isNaN(settings.localModelRefreshInterval)) {
+    validated.localModelRefreshInterval = Math.max(1, Math.min(60, settings.localModelRefreshInterval));
+  }
+  if (typeof settings.maxTokens === "number" && !isNaN(settings.maxTokens)) {
+    validated.maxTokens = Math.max(100, Math.min(2e3, settings.maxTokens));
+  }
+  if (typeof settings.temperature === "number" && !isNaN(settings.temperature)) {
+    validated.temperature = Math.max(0, Math.min(1, settings.temperature));
+  }
+  if (typeof settings.timeout === "number" && !isNaN(settings.timeout)) {
+    validated.timeout = Math.max(10, Math.min(120, settings.timeout));
+  }
+  if (typeof settings.retries === "number" && !isNaN(settings.retries)) {
+    validated.retries = Math.max(1, Math.min(5, settings.retries));
+  }
+  return validated;
+}
 
 // src/llm-providers.ts
 var import_obsidian = require("obsidian");
@@ -502,15 +576,27 @@ var TaskProcessor = class {
         this.processingFiles.delete(file.path);
         return;
       }
-      const processedValue = this.getFrontmatterValue(front, this.settings.processedFrontmatterKey);
+      if (!this.settings.triggerTypes || !Array.isArray(this.settings.triggerTypes) || this.settings.triggerTypes.length === 0) {
+        console.warn("TaskExtractor: Invalid trigger types configuration, skipping processing");
+        this.processingFiles.delete(file.path);
+        return;
+      }
+      const processedKey = this.settings.processedFrontmatterKey || "taskExtractor.processed";
+      const processedValue = this.getFrontmatterValue(front, processedKey);
       if (processedValue === true || processedValue === "true") {
         this.processingFiles.delete(file.path);
         return;
       }
-      const typeRaw = this.getFrontmatterValue(front, "Type") || "";
+      const frontmatterField = this.validateFrontmatterField(this.settings.triggerFrontmatterField);
+      const typeRaw = this.getFrontmatterValue(front, frontmatterField) || "";
       const type = ("" + typeRaw).toLowerCase();
       const accepted = this.settings.triggerTypes.map((t) => t.toLowerCase());
       if (!accepted.includes(type)) {
+        this.processingFiles.delete(file.path);
+        return;
+      }
+      if (!this.settings.ownerName || this.settings.ownerName.trim().length === 0) {
+        console.warn("TaskExtractor: Owner name not configured, skipping processing");
         this.processingFiles.delete(file.path);
         return;
       }
@@ -548,7 +634,8 @@ var TaskProcessor = class {
       const front = cache == null ? void 0 : cache.frontmatter;
       if (!front)
         continue;
-      const typeRaw = this.getFrontmatterValue(front, "Type") || "";
+      const frontmatterField = this.validateFrontmatterField(this.settings.triggerFrontmatterField);
+      const typeRaw = this.getFrontmatterValue(front, frontmatterField) || "";
       const type = ("" + typeRaw).toLowerCase();
       const accepted = this.settings.triggerTypes.map((t) => t.toLowerCase());
       const processedValue = this.getFrontmatterValue(front, this.settings.processedFrontmatterKey);
@@ -709,9 +796,14 @@ ${content}
   }
   // Create TaskNotes–compatible note in tasksFolder
   async createTaskNote(extraction, sourceFile) {
+    var _a;
     const safeTitle = this.makeFilenameSafe(extraction.task_title || "task");
     let filename = `${safeTitle}.md`;
-    let folder = this.settings.tasksFolder.trim() || "Tasks";
+    let folder = ((_a = this.settings.tasksFolder) == null ? void 0 : _a.trim()) || "Tasks";
+    if (!folder || folder.length === 0) {
+      folder = "Tasks";
+    }
+    folder = folder.replace(/[\\/:*?"<>|]/g, "");
     let path = `${folder}/${filename}`;
     let counter = 1;
     while (this.app.vault.getAbstractFileByPath(path)) {
@@ -761,6 +853,27 @@ ${content}
   makeFilenameSafe(title) {
     return title.replace(/[\\/:*?"<>|#%{}\\^~\[\]`;'@&=+]/g, "").replace(/\s+/g, "-").slice(0, 120);
   }
+  /**
+   * Validates frontmatter field name with graceful fallback to "Type"
+   * Ensures the field name is valid for YAML and safe to use
+   */
+  validateFrontmatterField(fieldName) {
+    if (!fieldName || typeof fieldName !== "string" || fieldName.trim().length === 0) {
+      console.warn('TaskExtractor: Empty frontmatter field name, falling back to "Type"');
+      return "Type";
+    }
+    const trimmed = fieldName.trim();
+    const yamlKeyPattern = /^[a-zA-Z_][a-zA-Z0-9_.-]*$/;
+    if (!yamlKeyPattern.test(trimmed)) {
+      console.warn(`TaskExtractor: Invalid frontmatter field name "${trimmed}", falling back to "Type"`);
+      return "Type";
+    }
+    if (trimmed.includes("..") || trimmed.startsWith(".") || trimmed.endsWith(".")) {
+      console.warn(`TaskExtractor: Problematic frontmatter field name "${trimmed}", falling back to "Type"`);
+      return "Type";
+    }
+    return trimmed;
+  }
   // Cleanup method
   cleanup() {
     this.fileChangeDebouncer.forEach((timeout) => clearTimeout(timeout));
@@ -773,8 +886,417 @@ ${content}
   }
 };
 
+// src/settings.ts
+var import_obsidian3 = require("obsidian");
+var ExtractorSettingTab = class extends import_obsidian3.PluginSettingTab {
+  constructor(app, plugin, settings, llmProvider) {
+    super(app, plugin);
+    this.plugin = plugin;
+    this.settings = settings;
+    this.llmProvider = llmProvider;
+    this.saveTimeout = null;
+  }
+  // Debounced save to reduce save frequency
+  debouncedSave() {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+    this.saveTimeout = setTimeout(async () => {
+      await this.plugin.saveSettings();
+      this.saveTimeout = null;
+    }, 500);
+  }
+  // Clean up timeout on hide
+  hide() {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+      this.saveTimeout = null;
+    }
+    super.hide();
+  }
+  /**
+   * Validates frontmatter field name according to YAML key format
+   * Returns a valid field name or defaults to "Type"
+   */
+  validateFrontmatterField(fieldName) {
+    if (!fieldName || fieldName.length === 0) {
+      return "Type";
+    }
+    const yamlKeyPattern = /^[a-zA-Z_][a-zA-Z0-9_.-]*$/;
+    if (!yamlKeyPattern.test(fieldName)) {
+      return "Type";
+    }
+    if (fieldName.includes("..") || fieldName.startsWith(".") || fieldName.endsWith(".")) {
+      return "Type";
+    }
+    return fieldName;
+  }
+  /**
+   * Shows validation feedback to the user
+   */
+  showValidationFeedback(inputEl, message) {
+    inputEl.style.borderColor = "#ff6b6b";
+    inputEl.style.backgroundColor = "rgba(255, 107, 107, 0.1)";
+    inputEl.title = message;
+    setTimeout(() => {
+      inputEl.style.borderColor = "";
+      inputEl.style.backgroundColor = "";
+      inputEl.title = "";
+    }, 3e3);
+  }
+  /**
+   * Validates and clamps numeric values with enhanced error handling
+   */
+  validateNumericInput(value, min, max, defaultValue) {
+    if (isNaN(value)) {
+      return {
+        value: defaultValue,
+        isValid: false,
+        message: `Invalid number. Using default value ${defaultValue}.`
+      };
+    }
+    if (value < min) {
+      return {
+        value: min,
+        isValid: false,
+        message: `Value too low. Minimum is ${min}.`
+      };
+    }
+    if (value > max) {
+      return {
+        value: max,
+        isValid: false,
+        message: `Value too high. Maximum is ${max}.`
+      };
+    }
+    return { value, isValid: true };
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.createEl("h2", { text: "Task Extractor Settings" });
+    this.addProviderSection(containerEl);
+    this.addLocalLLMSection(containerEl);
+    this.addProcessingSection(containerEl);
+    this.addFrontmatterSection(containerEl);
+    this.addAdvancedSection(containerEl);
+  }
+  addProviderSection(containerEl) {
+    containerEl.createEl("h3", { text: "LLM Provider Configuration" });
+    const statusEl = containerEl.createEl("div", { cls: "task-extractor-status" });
+    this.updateServiceStatus(statusEl);
+    new import_obsidian3.Setting(containerEl).setName("Provider").setDesc("Choose LLM provider. Local providers (Ollama/LM Studio) require the service to be running.").addDropdown((cb) => cb.addOption("openai", "OpenAI").addOption("anthropic", "Anthropic").addOption("ollama", "Ollama (Local)").addOption("lmstudio", "LM Studio (Local)").setValue(this.settings.provider).onChange((v) => {
+      this.settings.provider = v;
+      this.debouncedSave();
+      this.llmProvider.getApiKeyMissingNotified().clear();
+      this.updateServiceStatus(statusEl);
+      this.display();
+    }));
+    if (["openai", "anthropic"].includes(this.settings.provider)) {
+      new import_obsidian3.Setting(containerEl).setName("API Key").setDesc("Your API key for the selected provider. Models will be loaded automatically once entered.").addText((text) => text.setPlaceholder("sk-... or claude-...").setValue(this.settings.apiKey).onChange((v) => {
+        this.settings.apiKey = v.trim();
+        this.debouncedSave();
+        const oldCacheKeys = Array.from(this.llmProvider.getCloudModelCache().keys()).filter((key) => key.startsWith(this.settings.provider));
+        oldCacheKeys.forEach((key) => this.llmProvider.getCloudModelCache().delete(key));
+        this.llmProvider.getApiKeyMissingNotified().clear();
+        this.display();
+      }));
+    }
+    this.addModelSetting(containerEl);
+  }
+  async addModelSetting(containerEl) {
+    const modelContainer = containerEl.createDiv();
+    const provider = this.settings.provider;
+    const service = this.llmProvider.getServiceCache().get(provider);
+    if (["ollama", "lmstudio"].includes(provider) && (service == null ? void 0 : service.available) && service.models.length > 0) {
+      new import_obsidian3.Setting(modelContainer).setName("Model").setDesc(`Select from ${service.models.length} available ${provider} models.`).addDropdown((cb) => {
+        service.models.forEach((model) => cb.addOption(model, model));
+        cb.setValue(this.settings.model || service.models[0]).onChange((v) => {
+          this.settings.model = v;
+          this.debouncedSave();
+        });
+      });
+    } else if (["openai", "anthropic"].includes(provider) && this.settings.apiKey) {
+      const loadingSetting = new import_obsidian3.Setting(modelContainer).setName("Model").setDesc("Loading available models...");
+      try {
+        const availableModels = await this.llmProvider.fetchCloudModels(provider);
+        modelContainer.empty();
+        new import_obsidian3.Setting(modelContainer).setName("Model").setDesc(`Select from ${availableModels.length} available ${provider} models.`).addDropdown((cb) => {
+          availableModels.forEach((model) => cb.addOption(model, model));
+          const currentModel = this.settings.model;
+          const defaultModel = availableModels.includes(currentModel) ? currentModel : availableModels[0];
+          cb.setValue(defaultModel).onChange((v) => {
+            this.settings.model = v;
+            this.debouncedSave();
+          });
+        });
+        new import_obsidian3.Setting(modelContainer).setName("Refresh Models").setDesc("Reload the list of available models from the API.").addButton((button) => button.setButtonText("Refresh").onClick(async () => {
+          this.llmProvider.getCloudModelCache().clear();
+          this.display();
+        }));
+      } catch (error) {
+        modelContainer.empty();
+        this.addFallbackModelSetting(modelContainer, provider);
+      }
+    } else {
+      this.addFallbackModelSetting(modelContainer, provider);
+    }
+  }
+  addFallbackModelSetting(container, provider) {
+    const defaultModels = {
+      openai: "gpt-4o-mini",
+      anthropic: "claude-3-haiku-20240307",
+      ollama: "llama3.2",
+      lmstudio: "local-model"
+    };
+    const description = ["ollama", "lmstudio"].includes(provider) ? `Enter model name. Service not detected or no models available.` : `Enter model name manually.`;
+    new import_obsidian3.Setting(container).setName("Model").setDesc(description).addText((text) => text.setPlaceholder(defaultModels[provider] || "").setValue(this.settings.model).onChange((v) => {
+      this.settings.model = v.trim();
+      this.debouncedSave();
+    }));
+  }
+  addLocalLLMSection(containerEl) {
+    containerEl.createEl("h3", { text: "Local LLM Configuration" });
+    if (this.settings.provider === "ollama") {
+      new import_obsidian3.Setting(containerEl).setName("Ollama URL").setDesc("URL for your Ollama instance.").addText((text) => text.setValue(this.settings.ollamaUrl).onChange((v) => {
+        this.settings.ollamaUrl = v.trim();
+        this.debouncedSave();
+      }));
+    }
+    if (this.settings.provider === "lmstudio") {
+      new import_obsidian3.Setting(containerEl).setName("LM Studio URL").setDesc("URL for your LM Studio instance.").addText((text) => text.setValue(this.settings.lmstudioUrl).onChange((v) => {
+        this.settings.lmstudioUrl = v.trim();
+        this.debouncedSave();
+      }));
+    }
+    this.addSliderWithInput(
+      containerEl,
+      "Model Refresh Interval",
+      "How often to check for available models (minutes).",
+      this.settings.localModelRefreshInterval,
+      1,
+      60,
+      1,
+      (v) => {
+        this.settings.localModelRefreshInterval = v;
+        this.debouncedSave();
+      }
+    );
+  }
+  addProcessingSection(containerEl) {
+    containerEl.createEl("h3", { text: "Processing Settings" });
+    new import_obsidian3.Setting(containerEl).setName("Owner name").setDesc("Exact name the LLM should look for when deciding tasks.").addText((text) => text.setPlaceholder("Bryan Kolb").setValue(this.settings.ownerName).onChange((v) => {
+      this.settings.ownerName = v.trim();
+      this.debouncedSave();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Tasks folder").setDesc("Folder where generated task notes will be created.").addText((text) => text.setValue(this.settings.tasksFolder).onChange((v) => {
+      this.settings.tasksFolder = v.trim();
+      this.debouncedSave();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Trigger note types").setDesc("Comma-separated list of note types to process (from frontmatter Type field).").addText((text) => text.setValue(this.settings.triggerTypes.join(", ")).onChange((v) => {
+      this.settings.triggerTypes = v.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      this.debouncedSave();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Frontmatter field for filtering").setDesc('The frontmatter field name to use for filtering notes (e.g., "Type", "Category", "NoteType").').addText((text) => text.setPlaceholder("Type").setValue(this.settings.triggerFrontmatterField).onChange((v) => {
+      const validatedField = this.validateFrontmatterField(v.trim());
+      this.settings.triggerFrontmatterField = validatedField;
+      this.debouncedSave();
+      if (validatedField !== v.trim()) {
+        text.setValue(validatedField);
+        this.showValidationFeedback(text.inputEl, 'Invalid field name. Using default "Type".');
+      }
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Process edits as well as new files").setDesc("If enabled, modifications to matching notes will be processed too.").addToggle((toggle) => toggle.setValue(this.settings.processOnUpdate).onChange((v) => {
+      this.settings.processOnUpdate = v;
+      this.debouncedSave();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Link back to source").setDesc("Insert a link back to the source note in generated task notes.").addToggle((toggle) => toggle.setValue(this.settings.linkBack).onChange((v) => {
+      this.settings.linkBack = v;
+      this.debouncedSave();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Processed marker key").setDesc("Frontmatter key to mark processed notes.").addText((text) => text.setValue(this.settings.processedFrontmatterKey).onChange((v) => {
+      this.settings.processedFrontmatterKey = v.trim();
+      this.debouncedSave();
+    }));
+  }
+  addFrontmatterSection(containerEl) {
+    containerEl.createEl("h3", { text: "Task Note Frontmatter" });
+    new import_obsidian3.Setting(containerEl).setName("Add Field").setDesc("Add a new frontmatter field").addButton((button) => button.setButtonText("Add Field").onClick(() => {
+      this.settings.frontmatterFields.push({
+        key: "new_field",
+        defaultValue: "",
+        type: "text",
+        required: false
+      });
+      this.debouncedSave();
+      this.display();
+    }));
+    this.settings.frontmatterFields.forEach((field, index) => {
+      const fieldContainer = containerEl.createDiv({ cls: "task-extractor-field" });
+      new import_obsidian3.Setting(fieldContainer).setName(`Field ${index + 1}: ${field.key}`).setDesc(`Type: ${field.type}, Required: ${field.required ? "Yes" : "No"}`).addButton((button) => button.setButtonText("Remove").onClick(() => {
+        this.settings.frontmatterFields.splice(index, 1);
+        this.debouncedSave();
+        this.display();
+      }));
+    });
+    new import_obsidian3.Setting(containerEl).setName("Custom Prompt").setDesc("Override the default task extraction prompt. Leave empty to use default.").addTextArea((text) => text.setPlaceholder("Enter custom prompt...").setValue(this.settings.customPrompt).onChange((v) => {
+      this.settings.customPrompt = v;
+      this.debouncedSave();
+    }));
+  }
+  addAdvancedSection(containerEl) {
+    containerEl.createEl("h3", { text: "Advanced Settings" });
+    this.addSliderWithInput(
+      containerEl,
+      "Max Tokens",
+      "Maximum tokens to generate.",
+      this.settings.maxTokens,
+      100,
+      2e3,
+      50,
+      (v) => {
+        this.settings.maxTokens = v;
+        this.debouncedSave();
+      }
+    );
+    this.addSliderWithInput(
+      containerEl,
+      "Temperature",
+      "Creativity level (0 = deterministic, 1 = creative).",
+      this.settings.temperature,
+      0,
+      1,
+      0.1,
+      (v) => {
+        this.settings.temperature = v;
+        this.debouncedSave();
+      }
+    );
+    this.addSliderWithInput(
+      containerEl,
+      "Timeout (seconds)",
+      "Request timeout for LLM calls.",
+      this.settings.timeout,
+      10,
+      120,
+      5,
+      (v) => {
+        this.settings.timeout = v;
+        this.debouncedSave();
+      }
+    );
+    this.addSliderWithInput(
+      containerEl,
+      "Retry Attempts",
+      "Number of retry attempts for failed requests.",
+      this.settings.retries,
+      1,
+      5,
+      1,
+      (v) => {
+        this.settings.retries = v;
+        this.debouncedSave();
+      }
+    );
+  }
+  /**
+   * Helper method to create an enhanced slider with input field
+   * Provides bidirectional synchronization between slider and number input
+   */
+  addSliderWithInput(containerEl, name, desc, value, min, max, step, onChange) {
+    const setting = new import_obsidian3.Setting(containerEl).setName(name).setDesc(desc);
+    const controlContainer = setting.controlEl.createDiv({ cls: "task-extractor-slider-input-container" });
+    const sliderEl = controlContainer.createEl("input", {
+      type: "range",
+      cls: "task-extractor-slider"
+    });
+    sliderEl.min = min.toString();
+    sliderEl.max = max.toString();
+    sliderEl.step = step.toString();
+    sliderEl.value = value.toString();
+    const inputEl = controlContainer.createEl("input", {
+      type: "number",
+      cls: "task-extractor-number-input"
+    });
+    inputEl.min = min.toString();
+    inputEl.max = max.toString();
+    inputEl.step = step.toString();
+    inputEl.value = value.toString();
+    sliderEl.addEventListener("input", () => {
+      const newValue = parseFloat(sliderEl.value);
+      const validation = this.validateNumericInput(newValue, min, max, value);
+      inputEl.value = validation.value.toString();
+      onChange(validation.value);
+    });
+    inputEl.addEventListener("input", () => {
+      const newValue = parseFloat(inputEl.value);
+      const validation = this.validateNumericInput(newValue, min, max, value);
+      if (!validation.isValid) {
+        inputEl.value = validation.value.toString();
+        this.showValidationFeedback(inputEl, validation.message || "Invalid value");
+      }
+      sliderEl.value = validation.value.toString();
+      onChange(validation.value);
+    });
+    inputEl.addEventListener("blur", () => {
+      const newValue = parseFloat(inputEl.value);
+      const validation = this.validateNumericInput(newValue, min, max, value);
+      inputEl.value = validation.value.toString();
+      sliderEl.value = validation.value.toString();
+      if (!validation.isValid) {
+        this.showValidationFeedback(inputEl, validation.message || "Value corrected");
+      }
+    });
+    controlContainer.style.display = "flex";
+    controlContainer.style.alignItems = "center";
+    controlContainer.style.gap = "12px";
+    controlContainer.style.width = "100%";
+    sliderEl.style.flex = "1";
+    sliderEl.style.minWidth = "120px";
+    sliderEl.style.height = "20px";
+    inputEl.style.width = "80px";
+    inputEl.style.textAlign = "center";
+    inputEl.style.padding = "4px 8px";
+    inputEl.style.border = "1px solid var(--background-modifier-border)";
+    inputEl.style.borderRadius = "4px";
+    inputEl.style.backgroundColor = "var(--background-primary)";
+    inputEl.style.color = "var(--text-normal)";
+    inputEl.style.fontSize = "13px";
+  }
+  updateServiceStatus(statusEl) {
+    statusEl.empty();
+    const provider = this.settings.provider;
+    const service = this.llmProvider.getServiceCache().get(provider);
+    if (["ollama", "lmstudio"].includes(provider)) {
+      if (service == null ? void 0 : service.available) {
+        statusEl.createEl("div", {
+          text: `\u2705 ${provider} connected (${service.models.length} models)`,
+          cls: "task-extractor-status-success"
+        });
+      } else {
+        statusEl.createEl("div", {
+          text: `\u274C ${provider} not available`,
+          cls: "task-extractor-status-error"
+        });
+      }
+    } else {
+      if (this.settings.apiKey) {
+        statusEl.createEl("div", {
+          text: `\u2705 ${provider} API key configured`,
+          cls: "task-extractor-status-success"
+        });
+      } else {
+        statusEl.createEl("div", {
+          text: `\u274C ${provider} API key required`,
+          cls: "task-extractor-status-error"
+        });
+      }
+    }
+  }
+};
+
 // main.ts
-var TaskExtractorPlugin = class extends import_obsidian3.Plugin {
+var TaskExtractorPlugin = class extends import_obsidian4.Plugin {
   constructor() {
     super(...arguments);
     this.processingFiles = /* @__PURE__ */ new Set();
@@ -793,10 +1315,10 @@ var TaskExtractorPlugin = class extends import_obsidian3.Plugin {
     this.cloudModelCache = this.llmProvider.getCloudModelCache();
     this.apiKeyMissingNotified = this.llmProvider.getApiKeyMissingNotified();
     this.processingFiles = this.taskProcessor.getProcessingFiles();
-    this.addSettingTab(new ExtractorSettingTab(this.app, this));
+    this.addSettingTab(new ExtractorSettingTab(this.app, this, this.settings, this.llmProvider));
     this.registerEvent(
       this.app.vault.on("create", (file) => {
-        if (file instanceof import_obsidian3.TFile) {
+        if (file instanceof import_obsidian4.TFile) {
           this.debounceFileChange(file);
         }
       })
@@ -804,7 +1326,7 @@ var TaskExtractorPlugin = class extends import_obsidian3.Plugin {
     if (this.settings.processOnUpdate) {
       this.registerEvent(
         this.app.vault.on("modify", (file) => {
-          if (file instanceof import_obsidian3.TFile) {
+          if (file instanceof import_obsidian4.TFile) {
             this.debounceFileChange(file);
           }
         })
@@ -825,7 +1347,8 @@ var TaskExtractorPlugin = class extends import_obsidian3.Plugin {
     this.apiKeyMissingNotified.clear();
   }
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const rawSettings = await this.loadData();
+    this.settings = validateSettings(Object.assign({}, DEFAULT_SETTINGS, rawSettings));
   }
   async saveSettings() {
     await this.saveData(this.settings);
@@ -866,234 +1389,5 @@ var TaskExtractorPlugin = class extends import_obsidian3.Plugin {
   }
   getDefaultModels(provider) {
     return this.llmProvider.getDefaultModels(provider);
-  }
-};
-var ExtractorSettingTab = class extends import_obsidian3.PluginSettingTab {
-  constructor(app, plugin) {
-    super(app, plugin);
-    this.saveTimeout = null;
-    this.plugin = plugin;
-  }
-  // Debounced save to reduce save frequency
-  debouncedSave() {
-    if (this.saveTimeout) {
-      clearTimeout(this.saveTimeout);
-    }
-    this.saveTimeout = setTimeout(async () => {
-      await this.plugin.saveSettings();
-      this.saveTimeout = null;
-    }, 500);
-  }
-  // Clean up timeout on hide
-  hide() {
-    if (this.saveTimeout) {
-      clearTimeout(this.saveTimeout);
-      this.saveTimeout = null;
-    }
-    super.hide();
-  }
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-    containerEl.createEl("h2", { text: "Task Extractor Settings" });
-    this.addProviderSection(containerEl);
-    this.addLocalLLMSection(containerEl);
-    this.addProcessingSection(containerEl);
-    this.addFrontmatterSection(containerEl);
-    this.addAdvancedSection(containerEl);
-  }
-  addProviderSection(containerEl) {
-    containerEl.createEl("h3", { text: "LLM Provider Configuration" });
-    const statusEl = containerEl.createEl("div", { cls: "task-extractor-status" });
-    this.updateServiceStatus(statusEl);
-    new import_obsidian3.Setting(containerEl).setName("Provider").setDesc("Choose LLM provider. Local providers (Ollama/LM Studio) require the service to be running.").addDropdown((cb) => cb.addOption("openai", "OpenAI").addOption("anthropic", "Anthropic").addOption("ollama", "Ollama (Local)").addOption("lmstudio", "LM Studio (Local)").setValue(this.plugin.settings.provider).onChange((v) => {
-      this.plugin.settings.provider = v;
-      this.debouncedSave();
-      this.plugin.apiKeyMissingNotified.clear();
-      this.updateServiceStatus(statusEl);
-      this.display();
-    }));
-    if (["openai", "anthropic"].includes(this.plugin.settings.provider)) {
-      new import_obsidian3.Setting(containerEl).setName("API Key").setDesc("Your API key for the selected provider. Models will be loaded automatically once entered.").addText((text) => text.setPlaceholder("sk-... or claude-...").setValue(this.plugin.settings.apiKey).onChange((v) => {
-        this.plugin.settings.apiKey = v.trim();
-        this.debouncedSave();
-        const oldCacheKeys = Array.from(this.plugin.cloudModelCache.keys()).filter((key) => key.startsWith(this.plugin.settings.provider));
-        oldCacheKeys.forEach((key) => this.plugin.cloudModelCache.delete(key));
-        this.plugin.apiKeyMissingNotified.clear();
-        this.display();
-      }));
-    }
-    this.addModelSetting(containerEl);
-  }
-  async addModelSetting(containerEl) {
-    const modelContainer = containerEl.createDiv();
-    const provider = this.plugin.settings.provider;
-    const service = this.plugin.serviceCache.get(provider);
-    if (["ollama", "lmstudio"].includes(provider) && (service == null ? void 0 : service.available) && service.models.length > 0) {
-      new import_obsidian3.Setting(modelContainer).setName("Model").setDesc(`Select from ${service.models.length} available ${provider} models.`).addDropdown((cb) => {
-        service.models.forEach((model) => cb.addOption(model, model));
-        cb.setValue(this.plugin.settings.model || service.models[0]).onChange((v) => {
-          this.plugin.settings.model = v;
-          this.debouncedSave();
-        });
-      });
-    } else if (["openai", "anthropic"].includes(provider) && this.plugin.settings.apiKey) {
-      const loadingSetting = new import_obsidian3.Setting(modelContainer).setName("Model").setDesc("Loading available models...");
-      try {
-        const availableModels = await this.plugin.fetchCloudModels(provider);
-        modelContainer.empty();
-        new import_obsidian3.Setting(modelContainer).setName("Model").setDesc(`Select from ${availableModels.length} available ${provider} models.`).addDropdown((cb) => {
-          availableModels.forEach((model) => cb.addOption(model, model));
-          const currentModel = this.plugin.settings.model;
-          const defaultModel = availableModels.includes(currentModel) ? currentModel : availableModels[0];
-          cb.setValue(defaultModel).onChange((v) => {
-            this.plugin.settings.model = v;
-            this.debouncedSave();
-          });
-        });
-        new import_obsidian3.Setting(modelContainer).setName("Refresh Models").setDesc("Reload the list of available models from the API.").addButton((button) => button.setButtonText("Refresh").onClick(async () => {
-          this.plugin.cloudModelCache.clear();
-          this.display();
-        }));
-      } catch (error) {
-        modelContainer.empty();
-        this.addFallbackModelSetting(modelContainer, provider);
-      }
-    } else {
-      this.addFallbackModelSetting(modelContainer, provider);
-    }
-  }
-  addFallbackModelSetting(container, provider) {
-    const defaultModels = {
-      openai: "gpt-4o-mini",
-      anthropic: "claude-3-haiku-20240307",
-      ollama: "llama3.2",
-      lmstudio: "local-model"
-    };
-    const description = ["ollama", "lmstudio"].includes(provider) ? `Enter model name. Service not detected or no models available.` : `Enter model name manually.`;
-    new import_obsidian3.Setting(container).setName("Model").setDesc(description).addText((text) => text.setPlaceholder(defaultModels[provider] || "").setValue(this.plugin.settings.model).onChange((v) => {
-      this.plugin.settings.model = v.trim();
-      this.debouncedSave();
-    }));
-  }
-  addLocalLLMSection(containerEl) {
-    containerEl.createEl("h3", { text: "Local LLM Configuration" });
-    if (this.plugin.settings.provider === "ollama") {
-      new import_obsidian3.Setting(containerEl).setName("Ollama URL").setDesc("URL for your Ollama instance.").addText((text) => text.setValue(this.plugin.settings.ollamaUrl).onChange((v) => {
-        this.plugin.settings.ollamaUrl = v.trim();
-        this.debouncedSave();
-      }));
-    }
-    if (this.plugin.settings.provider === "lmstudio") {
-      new import_obsidian3.Setting(containerEl).setName("LM Studio URL").setDesc("URL for your LM Studio instance.").addText((text) => text.setValue(this.plugin.settings.lmstudioUrl).onChange((v) => {
-        this.plugin.settings.lmstudioUrl = v.trim();
-        this.debouncedSave();
-      }));
-    }
-    new import_obsidian3.Setting(containerEl).setName("Model Refresh Interval").setDesc("How often to check for available models (minutes).").addSlider((slider) => slider.setLimits(1, 60, 1).setValue(this.plugin.settings.localModelRefreshInterval).setDynamicTooltip().onChange((v) => {
-      this.plugin.settings.localModelRefreshInterval = v;
-      this.debouncedSave();
-    }));
-  }
-  addProcessingSection(containerEl) {
-    containerEl.createEl("h3", { text: "Processing Settings" });
-    new import_obsidian3.Setting(containerEl).setName("Owner name").setDesc("Exact name the LLM should look for when deciding tasks.").addText((text) => text.setPlaceholder("Bryan Kolb").setValue(this.plugin.settings.ownerName).onChange((v) => {
-      this.plugin.settings.ownerName = v.trim();
-      this.debouncedSave();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Tasks folder").setDesc("Folder where generated task notes will be created.").addText((text) => text.setValue(this.plugin.settings.tasksFolder).onChange((v) => {
-      this.plugin.settings.tasksFolder = v.trim();
-      this.debouncedSave();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Trigger note types").setDesc("Comma-separated list of note types to process (from frontmatter Type field).").addText((text) => text.setValue(this.plugin.settings.triggerTypes.join(", ")).onChange((v) => {
-      this.plugin.settings.triggerTypes = v.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
-      this.debouncedSave();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Process edits as well as new files").setDesc("If enabled, modifications to matching notes will be processed too.").addToggle((toggle) => toggle.setValue(this.plugin.settings.processOnUpdate).onChange((v) => {
-      this.plugin.settings.processOnUpdate = v;
-      this.debouncedSave();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Link back to source").setDesc("Insert a link back to the source note in generated task notes.").addToggle((toggle) => toggle.setValue(this.plugin.settings.linkBack).onChange((v) => {
-      this.plugin.settings.linkBack = v;
-      this.debouncedSave();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Processed marker key").setDesc("Frontmatter key to mark processed notes.").addText((text) => text.setValue(this.plugin.settings.processedFrontmatterKey).onChange((v) => {
-      this.plugin.settings.processedFrontmatterKey = v.trim();
-      this.debouncedSave();
-    }));
-  }
-  addFrontmatterSection(containerEl) {
-    containerEl.createEl("h3", { text: "Task Note Frontmatter" });
-    new import_obsidian3.Setting(containerEl).setName("Add Field").setDesc("Add a new frontmatter field").addButton((button) => button.setButtonText("Add Field").onClick(() => {
-      this.plugin.settings.frontmatterFields.push({
-        key: "new_field",
-        defaultValue: "",
-        type: "text",
-        required: false
-      });
-      this.debouncedSave();
-      this.display();
-    }));
-    this.plugin.settings.frontmatterFields.forEach((field, index) => {
-      const fieldContainer = containerEl.createDiv({ cls: "task-extractor-field" });
-      new import_obsidian3.Setting(fieldContainer).setName(`Field ${index + 1}: ${field.key}`).setDesc(`Type: ${field.type}, Required: ${field.required ? "Yes" : "No"}`).addButton((button) => button.setButtonText("Remove").onClick(() => {
-        this.plugin.settings.frontmatterFields.splice(index, 1);
-        this.debouncedSave();
-        this.display();
-      }));
-    });
-    new import_obsidian3.Setting(containerEl).setName("Custom Prompt").setDesc("Override the default task extraction prompt. Leave empty to use default.").addTextArea((text) => text.setPlaceholder("Enter custom prompt...").setValue(this.plugin.settings.customPrompt).onChange((v) => {
-      this.plugin.settings.customPrompt = v;
-      this.debouncedSave();
-    }));
-  }
-  addAdvancedSection(containerEl) {
-    containerEl.createEl("h3", { text: "Advanced Settings" });
-    new import_obsidian3.Setting(containerEl).setName("Max Tokens").setDesc("Maximum tokens to generate.").addSlider((slider) => slider.setLimits(100, 2e3, 50).setValue(this.plugin.settings.maxTokens).setDynamicTooltip().onChange((v) => {
-      this.plugin.settings.maxTokens = v;
-      this.debouncedSave();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Temperature").setDesc("Creativity level (0 = deterministic, 1 = creative).").addSlider((slider) => slider.setLimits(0, 1, 0.1).setValue(this.plugin.settings.temperature).setDynamicTooltip().onChange((v) => {
-      this.plugin.settings.temperature = v;
-      this.debouncedSave();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Timeout (seconds)").setDesc("Request timeout for LLM calls.").addSlider((slider) => slider.setLimits(10, 120, 5).setValue(this.plugin.settings.timeout).setDynamicTooltip().onChange((v) => {
-      this.plugin.settings.timeout = v;
-      this.debouncedSave();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Retry Attempts").setDesc("Number of retry attempts for failed requests.").addSlider((slider) => slider.setLimits(1, 5, 1).setValue(this.plugin.settings.retries).setDynamicTooltip().onChange((v) => {
-      this.plugin.settings.retries = v;
-      this.debouncedSave();
-    }));
-  }
-  updateServiceStatus(statusEl) {
-    statusEl.empty();
-    const provider = this.plugin.settings.provider;
-    const service = this.plugin.serviceCache.get(provider);
-    if (["ollama", "lmstudio"].includes(provider)) {
-      if (service == null ? void 0 : service.available) {
-        statusEl.createEl("div", {
-          text: `\u2705 ${provider} connected (${service.models.length} models)`,
-          cls: "task-extractor-status-success"
-        });
-      } else {
-        statusEl.createEl("div", {
-          text: `\u274C ${provider} not available`,
-          cls: "task-extractor-status-error"
-        });
-      }
-    } else {
-      if (this.plugin.settings.apiKey) {
-        statusEl.createEl("div", {
-          text: `\u2705 ${provider} API key configured`,
-          cls: "task-extractor-status-success"
-        });
-      } else {
-        statusEl.createEl("div", {
-          text: `\u274C ${provider} API key required`,
-          cls: "task-extractor-status-error"
-        });
-      }
-    }
   }
 };

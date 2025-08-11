@@ -143,13 +143,43 @@ Type: Email  # This will trigger processing
 
 **Customization**: Add/remove trigger types in settings (comma-separated list)
 
+#### Flexible Frontmatter Field Configuration
+
+**NEW**: You can now customize which frontmatter field is used for filtering notes:
+
+```yaml
+---
+Category: Email     # Custom field instead of "Type"
+NoteType: Meeting   # Or any other field name
+---
+```
+
+**Configuration**:
+1. Go to **Settings → Processing Settings**
+2. Set **Frontmatter field for filtering** to your preferred field name
+3. Ensure your notes use this field consistently
+
+**Benefits**:
+- Adapt to existing note templates and workflows
+- Use more descriptive field names that match your system
+- Maintain consistency with other plugins or tools
+- Backward compatible - defaults to "Type" if not configured
+
+**Validation**: Field names must follow YAML key format (letters, numbers, underscores, hyphens, dots)
+
 ### Advanced Settings
 
 #### Performance Tuning
-- **Max Tokens**: Control response length (100-2000)
-- **Temperature**: Creativity level (0=deterministic, 1=creative)
-- **Timeout**: Request timeout in seconds (10-120)
-- **Retry Attempts**: Failed request retries (1-5)
+- **Max Tokens**: Control response length (100-2000) - Enhanced slider with input field
+- **Temperature**: Creativity level (0=deterministic, 1=creative) - Enhanced slider with input field
+- **Timeout**: Request timeout in seconds (10-120) - Enhanced slider with input field
+- **Retry Attempts**: Failed request retries (1-5) - Enhanced slider with input field
+
+**NEW**: Enhanced slider components provide both slider and direct numeric input with:
+- Bidirectional synchronization between slider and input field
+- Real-time validation with bounds checking
+- Visual feedback for invalid values
+- Improved accessibility and user experience
 
 #### Local LLM Settings
 - **Service URLs**: Configure custom endpoints
@@ -382,6 +412,15 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Issues**: [GitHub Issues](https://github.com/bryanjkolb/obsidian-task-extractor/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/bryanjkolb/obsidian-task-extractor/discussions)
 - **Documentation**: This README and in-plugin help
+
+## 🎯 Recent Updates
+
+### v0.2.0 - Flexible Frontmatter Filtering & Enhanced UI
+- ✅ **Flexible Frontmatter Field Configuration**: Customize which frontmatter field triggers processing
+- ✅ **Enhanced Slider Components**: Bidirectional slider-input synchronization with validation
+- ✅ **Improved Input Validation**: Real-time bounds checking and error feedback
+- ✅ **Comprehensive Test Suite**: 41 unit and integration tests ensuring reliability
+- ✅ **Backward Compatibility**: All existing configurations continue to work seamlessly
 
 ## 🎯 Roadmap
 
