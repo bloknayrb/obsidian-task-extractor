@@ -75,22 +75,17 @@ function validateSettings(settings, debugLogger) {
   if (settings.provider && ["openai", "anthropic", "ollama", "lmstudio"].includes(settings.provider)) {
     validated.provider = settings.provider;
   }
-  if (typeof settings.apiKey === "string")
-    validated.apiKey = settings.apiKey;
-  if (typeof settings.model === "string")
-    validated.model = settings.model;
-  if (typeof settings.ollamaUrl === "string")
-    validated.ollamaUrl = settings.ollamaUrl;
-  if (typeof settings.lmstudioUrl === "string")
-    validated.lmstudioUrl = settings.lmstudioUrl;
+  if (typeof settings.apiKey === "string") validated.apiKey = settings.apiKey;
+  if (typeof settings.model === "string") validated.model = settings.model;
+  if (typeof settings.ollamaUrl === "string") validated.ollamaUrl = settings.ollamaUrl;
+  if (typeof settings.lmstudioUrl === "string") validated.lmstudioUrl = settings.lmstudioUrl;
   if (typeof settings.tasksFolder === "string" && settings.tasksFolder.trim()) {
     validated.tasksFolder = settings.tasksFolder.trim();
   }
   if (typeof settings.ownerName === "string" && settings.ownerName.trim()) {
     validated.ownerName = settings.ownerName.trim();
   }
-  if (typeof settings.customPrompt === "string")
-    validated.customPrompt = settings.customPrompt;
+  if (typeof settings.customPrompt === "string") validated.customPrompt = settings.customPrompt;
   if (typeof settings.processedFrontmatterKey === "string") {
     const key = settings.processedFrontmatterKey.trim();
     const parts = key.split(".");
@@ -107,10 +102,8 @@ function validateSettings(settings, debugLogger) {
       validated.triggerFrontmatterField = field;
     }
   }
-  if (typeof settings.linkBack === "boolean")
-    validated.linkBack = settings.linkBack;
-  if (typeof settings.processOnUpdate === "boolean")
-    validated.processOnUpdate = settings.processOnUpdate;
+  if (typeof settings.linkBack === "boolean") validated.linkBack = settings.linkBack;
+  if (typeof settings.processOnUpdate === "boolean") validated.processOnUpdate = settings.processOnUpdate;
   if (Array.isArray(settings.triggerTypes)) {
     const validTypes = settings.triggerTypes.filter((t) => typeof t === "string" && t.trim().length > 0).map((t) => t.trim());
     if (validTypes.length > 0) {
@@ -427,8 +420,7 @@ var LLMProviderManager = class {
       primaryProvider: this.settings.provider
     }, correlationId);
     for (const service of availableServices) {
-      if (service.name === this.settings.provider)
-        continue;
+      if (service.name === this.settings.provider) continue;
       try {
         console.log(`Trying fallback to ${service.name}`);
         (_b = this.debugLogger) == null ? void 0 : _b.log("info", "llm-call", `Attempting fallback to ${service.name}`, {
@@ -1196,8 +1188,7 @@ var TaskProcessor = class {
     for (const f of files) {
       const cache = this.app.metadataCache.getFileCache(f);
       const front = cache == null ? void 0 : cache.frontmatter;
-      if (!front)
-        continue;
+      if (!front) continue;
       const frontmatterField = this.validateFrontmatterField(this.settings.triggerFrontmatterField);
       const typeRaw = this.getFrontmatterValue(front, frontmatterField) || "";
       const type = ("" + typeRaw).toLowerCase();
@@ -1222,14 +1213,12 @@ var TaskProcessor = class {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
   getFrontmatterValue(front, key) {
-    if (!front)
-      return void 0;
+    if (!front) return void 0;
     if (key.includes(".")) {
       const parts = key.split(".");
       let cur = front;
       for (const p of parts) {
-        if (!cur)
-          return void 0;
+        if (!cur) return void 0;
         cur = cur[p];
       }
       return cur;
@@ -1332,18 +1321,12 @@ VALIDATION CONSTRAINTS:
 Return valid JSON only. Be conservative - accuracy over completeness.`;
     const fieldDescriptions = this.settings.frontmatterFields.filter((f) => f.required || f.key === "task_title" || f.key === "task_details").map((f) => {
       var _a;
-      if (f.key === "task" || f.key === "task_title")
-        return "- task_title: short (6-100 words) actionable title";
-      if (f.key === "task_details")
-        return "- task_details: 1-3 sentences describing what to do and any context";
-      if (f.key === "due")
-        return "- due_date: ISO date YYYY-MM-DD if explicitly present in the text, otherwise null";
-      if (f.key === "priority")
-        return `- priority: ${((_a = f.options) == null ? void 0 : _a.join("|")) || "high|medium|low"} (choose best match)`;
-      if (f.key === "project")
-        return "- project: project name if mentioned, otherwise null";
-      if (f.key === "client")
-        return "- client: client name if mentioned, otherwise null";
+      if (f.key === "task" || f.key === "task_title") return "- task_title: short (6-100 words) actionable title";
+      if (f.key === "task_details") return "- task_details: 1-3 sentences describing what to do and any context";
+      if (f.key === "due") return "- due_date: ISO date YYYY-MM-DD if explicitly present in the text, otherwise null";
+      if (f.key === "priority") return `- priority: ${((_a = f.options) == null ? void 0 : _a.join("|")) || "high|medium|low"} (choose best match)`;
+      if (f.key === "project") return "- project: project name if mentioned, otherwise null";
+      if (f.key === "client") return "- client: client name if mentioned, otherwise null";
       return `- ${f.key}: ${f.defaultValue || "appropriate value based on context"}`;
     });
     const system = `${basePrompt}
@@ -1525,8 +1508,7 @@ ${content}
           return { found: false };
         }
       }
-      if (!parsed.found)
-        return { found: false };
+      if (!parsed.found) return { found: false };
       return {
         found: true,
         task_title: parsed.task_title || parsed.title || "Unspecified task",
@@ -1548,8 +1530,7 @@ ${content}
     }
   }
   safeParseJSON(text) {
-    if (!text)
-      return null;
+    if (!text) return null;
     let parsed = null;
     try {
       parsed = JSON.parse(text);
@@ -1570,8 +1551,7 @@ ${content}
         return null;
       }
     }
-    if (!parsed || typeof parsed !== "object")
-      return null;
+    if (!parsed || typeof parsed !== "object") return null;
     return this.validateAndNormalizeParsedResult(parsed);
   }
   validateAndNormalizeParsedResult(data) {
@@ -1638,8 +1618,7 @@ ${content}
     return null;
   }
   isValidTask(task) {
-    if (typeof task !== "object" || !task)
-      return false;
+    if (typeof task !== "object" || !task) return false;
     if (!task.task_title || typeof task.task_title !== "string" || task.task_title.trim().length === 0) {
       return false;
     }
@@ -1685,7 +1664,7 @@ ${content}
     for (const field of this.settings.frontmatterFields) {
       let value = extraction[field.key] || extraction[field.key.replace("_", "")] || field.defaultValue;
       if (value === "{{date}}") {
-        value = new Date().toISOString().split("T")[0];
+        value = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       }
       if (field.key === "task" && !value && extraction.task_title) {
         value = extraction.task_title;
@@ -2306,7 +2285,7 @@ var DebugLogger = class {
     }
     const parts = [];
     parts.push("=== Obsidian Task Extractor Debug Logs ===\n");
-    parts.push(`Generated: ${new Date().toISOString()}
+    parts.push(`Generated: ${(/* @__PURE__ */ new Date()).toISOString()}
 `);
     parts.push(`Total Entries: ${this.logs.length}
 `);
