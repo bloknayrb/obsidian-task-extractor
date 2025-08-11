@@ -46,6 +46,28 @@ Key components:
 - `TaskProcessor`: File processing and task extraction event logging  
 - `LLMProviderManager`: API call logging and service detection tracking
 
+## Security & Dependencies
+
+### Security Posture
+- **Zero vulnerabilities**: Regular `npm audit` confirms no known security issues
+- **Dependency management**: All dependencies kept up-to-date with security patches
+- **API key protection**: Sensitive credentials are masked in debug logs and never committed
+- **Input sanitization**: All user inputs are validated before processing
+- **Secure storage**: Uses Obsidian's secure storage APIs for configuration
+
+### Current Dependency Versions (as of v2.1.3)
+- **esbuild**: ^0.25.8 (critical security fixes included)
+- **vite**: 7.1.1 (latest stable)
+- **vitest**: ^3.2.4 (comprehensive testing framework)
+- **TypeScript**: ^5.9.2 (modern language features)
+- **ESLint**: ^9.33.0 with TypeScript support ^8.39.1
+
+### Development Environment
+- **Modern tooling**: ESLint 9.x with TypeScript integration
+- **Type safety**: Full TypeScript coverage with CodeMirror declarations
+- **Testing**: 50+ tests with Vitest ensuring reliability
+- **Security auditing**: Automated dependency vulnerability scanning
+
 ## Development Notes
 
 - This is a TypeScript-based Obsidian plugin with full build configuration
@@ -53,3 +75,4 @@ Key components:
 - Settings include provider choice, model configuration, inline checklist toggle, and debug options
 - Debug logging can be enabled in settings with configurable maximum entry limits
 - Performance optimizations ensure minimal impact on plugin operation when debug mode is disabled
+- Security-first development with regular dependency audits and vulnerability fixes
