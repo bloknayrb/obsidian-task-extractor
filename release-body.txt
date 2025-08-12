@@ -1,110 +1,79 @@
-## 🚀 Task Extractor v2.3.0 - Enhanced Prompt Engineering
+## 🚀 Task Extractor v2.3.1 - Enhanced Prompt Engineering (Hotfix)
 
-This release delivers a completely rewritten task extraction prompt based on research into prompt engineering best practices, significantly improving accuracy and reliability.
+This patch release ensures the enhanced task extraction prompt from v2.3.0 is properly compiled and available in Obsidian.
 
-### ✨ What's New
+### 🐛 Bug Fixes
+
+#### Compilation Issue Resolution
+- **Fixed TypeScript compilation error**: Resolved template literal syntax issue preventing proper build
+- **Updated main.js**: Enhanced prompt is now properly compiled and available in the plugin
+- **Template literal fix**: Removed problematic markdown code blocks from prompt template
+
+### ✨ Enhanced Prompt Now Available
+
+The v2.3.0 prompt improvements are now fully functional:
 
 #### Advanced Prompt Engineering
 - **Multi-stage Analysis Framework**: Systematic 3-step process (Context Analysis → Task Identification → Information Extraction)
 - **Chain-of-thought Reasoning**: Built-in validation checkpoints and quality assurance steps
 - **Conservative Extraction**: "Accuracy over completeness" principle with confidence scoring
-- **Hallucination Prevention**: Strong validation rules and explicit null handling for uncertain information
+- **Hallucination Prevention**: Strong validation rules and explicit null handling
 
-#### Enhanced Task Detection
-- **Improved Accuracy**: Research-backed techniques reduce false positives and improve task quality
-- **Better Context Understanding**: Enhanced document type identification and project/client mapping
-- **Confidence Assessment**: Three-tier confidence scoring (high/medium/low) with extraction thresholds
-- **Professional Output**: Cleaner, more actionable task titles and descriptions
+#### Better Task Detection
+- **Improved Accuracy**: Research-backed techniques reduce false positives
+- **Enhanced Context Understanding**: Better document type identification and project/client mapping
+- **Confidence Assessment**: Three-tier confidence scoring (high/medium/low)
+- **Professional Output**: Cleaner, action-oriented task titles and descriptions
 
-#### Metadata Integration Improvements
-- **TaskNotes Compatibility**: Enhanced frontmatter integration aligned with TaskNotes repository patterns
-- **Better Field Extraction**: Improved project/client detection with explicit null handling
+#### TaskNotes Integration
+- **Enhanced Metadata Extraction**: Better frontmatter integration aligned with TaskNotes patterns
 - **Quality Standards**: Specific action verbs, measurable outcomes, and feasibility checks
-- **Structured Output**: Detailed JSON schema with field specifications and format examples
+- **Structured Output**: Detailed JSON schema with field specifications
 
-### 🔧 Technical Improvements
+### 🔧 What Was Fixed
 
-#### Prompt Architecture
-- **Structured Design**: Clear role definition with hierarchical instruction organization
-- **Quality Standards**: Explicit filtering criteria and mandatory exclusions
-- **Validation Rules**: Built-in checkpoints to ensure extraction quality
-- **Conservative Approach**: Extract only with medium or high confidence
+#### Build Process
+- **Template Literal Syntax**: Fixed backticks in multi-line string that broke TypeScript compilation
+- **Successful Compilation**: Plugin now builds correctly with enhanced prompt included
+- **Runtime Availability**: Enhanced prompt is now active when using the plugin
 
-#### Better Reliability
-- **Reduced False Positives**: Strict criteria for actionable tasks with specific exclusions
-- **Enhanced Validation**: Multiple validation steps before finalizing extractions
-- **Improved Consistency**: Standardized output format with detailed specifications
-- **Error Prevention**: Robust handling of edge cases and ambiguous content
-
-### 📈 User Experience Enhancements
-
-#### More Reliable Extractions
-- **Higher Quality Tasks**: Only extract clearly actionable items with specific outcomes
-- **Better Context Preservation**: Enhanced source excerpts and justification tracking
-- **Improved Metadata**: More accurate priority assignment and due date extraction
-- **Professional Language**: Cleaner, action-oriented task titles using active verbs
-
-#### Enhanced Documentation
-- **Updated README**: New section highlighting enhanced prompt features
-- **Configuration Guide**: Updated custom prompt documentation with examples
-- **Reset Functionality**: Enhanced default prompt with improved substitution
-
-### 🏗️ Architecture
-
-This release maintains full backward compatibility while delivering significant improvements:
-
-- **Existing Configurations**: All current settings and customizations continue to work unchanged
-- **API Compatibility**: No breaking changes to existing integrations
-- **Performance**: Enhanced prompt delivers better results without performance impact
-- **Extensibility**: Improved foundation for future prompt engineering enhancements
-
-### 🎯 Research-Backed Improvements
-
-Based on comprehensive research into prompt engineering best practices:
-
-- **Multi-provider Analysis**: Studied OpenAI, Anthropic, and academic prompt engineering guidelines
-- **TaskNotes Integration**: Analyzed successful task management frontmatter patterns
-- **Hallucination Prevention**: Implemented techniques from constitutional AI research
-- **Structured Extraction**: Applied systematic approaches for reliable information extraction
+#### User Impact
+- **Immediate Availability**: No need to wait for future release - enhanced prompt works now
+- **Seamless Upgrade**: Existing configurations continue to work with improved extraction quality
+- **Better Results**: Users will see improved task extraction accuracy immediately
 
 ### 🔄 Migration
 
-**No action required** - this update is fully backward compatible:
+**No action required** - this patch automatically provides the enhanced functionality:
 
-- Existing custom prompts continue to work unchanged
-- Default prompt automatically uses enhanced version
-- Reset functionality updates to new enhanced default
-- All settings and configurations preserved
+- Enhanced prompt is now the active default
+- All existing settings and customizations preserved
+- Immediate improvement in task extraction quality
+- Reset to default now uses the enhanced prompt
 
 ---
 
-### 📋 Full Changelog
+### 📋 Technical Details
 
-**New Features:**
-- Complete rewrite of default task extraction prompt using research-backed best practices
-- Multi-stage analysis framework with systematic validation checkpoints
-- Enhanced metadata extraction aligned with TaskNotes repository patterns
-- Conservative extraction principles with confidence scoring and hallucination prevention
+**What Changed:**
+- Fixed TypeScript template literal syntax in `src/types.ts`
+- Successfully compiled enhanced prompt into `main.js`
+- Resolved build pipeline issue that prevented v2.3.0 features from being available
 
-**Technical Improvements:**
-- Structured prompt architecture with clear role definition and hierarchical instructions
-- Quality standards with explicit filtering criteria and mandatory exclusions
-- Three-tier confidence assessment with extraction thresholds
-- Detailed JSON schema with field specifications and format examples
+**Files Updated:**
+- `src/types.ts` - Fixed template literal syntax
+- `main.js` - Rebuilt with enhanced prompt
+- Version files updated to 2.3.1
 
-**Documentation:**
-- Updated README with enhanced prompt features section
-- Improved custom prompt configuration guide
-- Enhanced reset functionality documentation
-- Added technical architecture details
+### 🎯 Impact
 
-### 🙏 Acknowledgments
+This hotfix ensures that all the research-backed prompt engineering improvements from v2.3.0 are now fully available to users. You should immediately see:
 
-This release incorporates research from:
-- OpenAI Prompt Engineering Guide (2024)
-- Anthropic Claude Prompt Engineering Documentation
-- Constitutional AI research papers
-- TaskNotes repository frontmatter patterns
+- More accurate task extraction
+- Better handling of edge cases
+- Improved metadata extraction
+- Reduced false positives
+- Enhanced context preservation
 
 ---
 
