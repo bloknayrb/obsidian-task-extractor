@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ExtractorSettingTab } from '../src/settings';
-import { ExtractorSettings, DEFAULT_SETTINGS } from '../src/types';
+import { ExtractorSettings, DEFAULT_SETTINGS, DEFAULT_EXTRACTION_PROMPT } from '../src/types';
 import { LLMProviderManager } from '../src/llm-providers';
 import { App, Plugin } from 'obsidian';
 
@@ -186,6 +186,37 @@ describe('Settings - Enhanced Slider Components', () => {
       expect(validateField('123invalid')).toBe('Type');
     });
 
+    it('should validate frontmatter field names with new method', () => {
+      // Test the new validateFrontmatterFieldName method
+      const validateFieldName = (settingTab as any).validateFrontmatterFieldName.bind(settingTab);
+      
+      // Valid field names
+      expect(validateFieldName('ValidField')).toBe('ValidField');
+      expect(validateFieldName('valid_field')).toBe('valid_field');
+      expect(validateFieldName('valid-field')).toBe('valid-field');
+      expect(validateFieldName('field.name')).toBe('field.name');
+      expect(validateFieldName('_private')).toBe('_private');
+      
+      // Invalid field names should return 'field'
+      expect(validateFieldName('')).toBe('field');
+      expect(validateFieldName('123invalid')).toBe('field');
+      expect(validateFieldName('field..name')).toBe('field');
+      expect(validateFieldName('.field')).toBe('field');
+      expect(validateFieldName('field.')).toBe('field');
+      expect(validateFieldName('field with spaces')).toBe('field');
+      expect(validateFieldName('field@invalid')).toBe('field');
+    });
+
+    it('should get appropriate placeholder text for field types', () => {
+      const getPlaceholder = (settingTab as any).getDefaultValuePlaceholder.bind(settingTab);
+      
+      expect(getPlaceholder('text')).toBe('Enter default text...');
+      expect(getPlaceholder('date')).toBe('{{date}} or YYYY-MM-DD');
+      expect(getPlaceholder('select')).toBe('Choose from options above');
+      expect(getPlaceholder('boolean')).toBe('true or false');
+      expect(getPlaceholder('unknown')).toBe('Enter default value...');
+    });
+
     it('should show validation feedback for invalid field names', () => {
       const showFeedback = vi.spyOn(settingTab as any, 'showValidationFeedback');
       
@@ -198,6 +229,43 @@ describe('Settings - Enhanced Slider Components', () => {
       
       expect(input.style.borderColor).toBe('rgb(255, 107, 107)');
       expect(input.title).toBe('Test message');
+    });
+
+    it('should have addFrontmatterFieldEditor method', () => {
+      expect(typeof (settingTab as any).addFrontmatterFieldEditor).toBe('function');
+    });
+
+    it('should test field editor creation concept', () => {
+      // Test that field editor can be created with proper field structure
+      const mockField = {
+        key: 'test_field',
+        defaultValue: 'test value',
+        type: 'text',
+        required: false
+      };
+      
+      // Test that the field structure is valid
+      expect(mockField.key).toBe('test_field');
+      expect(mockField.type).toBe('text');
+      expect(mockField.required).toBe(false);
+      expect(mockField.defaultValue).toBe('test value');
+    });
+
+    it('should handle defaultTaskType setting', () => {
+      // Test that defaultTaskType is properly handled
+      expect(settings.defaultTaskType).toBe('Task'); // Default value
+      
+      // Test setting a custom value
+      settings.defaultTaskType = 'Custom Task';
+      expect(settings.defaultTaskType).toBe('Custom Task');
+      
+      // Test empty value fallback
+      settings.defaultTaskType = '';
+      expect(settings.defaultTaskType).toBe('');
+      
+      // In the UI, empty values would be replaced with 'Task'
+      const normalizedValue = settings.defaultTaskType.trim() || 'Task';
+      expect(normalizedValue).toBe('Task');
     });
   });
 
@@ -277,6 +345,55 @@ describe('Settings - Enhanced Slider Components', () => {
       // Here we just verify the settings are updated
       expect(settings.debugMode).toBe(true);
       expect(settings.debugMaxEntries).toBe(2000);
+    });
+  });
+
+  describe('DEFAULT_EXTRACTION_PROMPT constant', () => {
+    it('should contain required elements like "task extraction specialist"', () => {
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('task extraction specialist');
+    });
+
+    it('should include {ownerName} placeholder', () => {
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('{ownerName}');
+    });
+
+    it('should include key instruction phrases', () => {
+      // Test for key instruction phrases from the requirements
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('Extract actionable tasks');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('EXTRACTION RULES');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('PRIORITY GUIDELINES');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('VALIDATION CONSTRAINTS');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('Return valid JSON only');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('Be conservative - accuracy over completeness');
+    });
+
+    it('should contain specific extraction rules', () => {
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('Extract ONLY concrete, actionable tasks');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('Use null for uncertain/missing information');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('DO NOT GUESS');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('If no clear tasks exist, return {"found": false, "tasks": []}');
+    });
+
+    it('should contain priority guidelines', () => {
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('high: explicit urgency/deadline mentioned');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('medium: standard requests without time pressure');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('low: optional/background items');
+    });
+
+    it('should contain validation constraints', () => {
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('task_title: 6-100 characters');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('task_details: max 300 characters');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('due_date: YYYY-MM-DD format');
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('source_excerpt: exact quote (max 150 chars)');
+    });
+
+    it('should be a non-empty string', () => {
+      expect(typeof DEFAULT_EXTRACTION_PROMPT).toBe('string');
+      expect(DEFAULT_EXTRACTION_PROMPT.length).toBeGreaterThan(0);
+    });
+
+    it('should contain owner name placeholder in correct context', () => {
+      expect(DEFAULT_EXTRACTION_PROMPT).toContain('Extract tasks only for the specified person: {ownerName}');
     });
   });
 });

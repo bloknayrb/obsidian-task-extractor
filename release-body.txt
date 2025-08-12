@@ -1,0 +1,120 @@
+# Task Extractor v2.2.2 - Manual Task Extraction Command
+
+## 🚀 Major New Feature: Manual Task Extraction
+
+This release introduces a powerful new manual task extraction command that gives users complete control over when and how task extraction occurs.
+
+### ✨ What's New
+
+#### Manual Task Extraction Command
+- **New Command**: "Extract tasks from current note" available in the command palette
+- **Hotkey Support**: Assign custom keyboard shortcuts for instant task extraction
+- **Universal Processing**: Works on any note regardless of frontmatter type
+- **Smart Validation**: Comprehensive error handling and user feedback
+- **Real-time Feedback**: Progress notices and result notifications
+
+#### Enhanced User Experience
+- **Start Processing Notice**: "Extracting tasks from current note..." shown when processing begins
+- **Success Notifications**: Clear feedback showing exact number of tasks created
+- **Error Handling**: Informative messages for common issues (no file, non-markdown, missing config)
+- **No Tasks Found**: Friendly notification when no actionable tasks are detected
+
+### 🔧 Technical Improvements
+
+#### Robust Command Implementation
+- **Validation Chain**: Null file checks, markdown validation, and configuration verification
+- **Error Recovery**: Graceful handling of edge cases and invalid states
+- **Test Coverage**: 7 new comprehensive test cases for manual command functionality
+- **Performance**: Optimized processing flow with minimal overhead
+
+#### Code Quality Enhancements
+- **Type Safety**: Enhanced TypeScript definitions and error handling
+- **Documentation**: Updated README with manual extraction usage examples
+- **Testing**: Total of 84 tests passing (100% success rate)
+- **Specifications**: Complete requirements and design documentation
+
+### 📋 Usage
+
+#### Command Palette
+1. Open command palette (`Ctrl+P` or `Cmd+P`)
+2. Type "Extract tasks from current note"
+3. Press Enter to run task extraction on active note
+
+#### Custom Hotkey (Recommended)
+1. Go to Settings → Hotkeys
+2. Search for "Extract tasks from current note"
+3. Assign your preferred key combination
+4. Use hotkey anytime to extract tasks from active note
+
+### 🛠 How It Works
+
+The manual command bypasses all frontmatter-based filtering and processes any markdown note:
+
+1. **Validates** current file (exists, is markdown, settings configured)
+2. **Analyzes** note content using configured LLM provider
+3. **Extracts** actionable tasks with proper context
+4. **Creates** task notes with full frontmatter and source links
+5. **Notifies** user of results with detailed feedback
+
+### 🔄 Integration with Existing Features
+
+- **LLM Provider Support**: Works with OpenAI, Anthropic, Ollama, and LM Studio
+- **Settings Compatibility**: Respects all existing plugin configurations
+- **Frontmatter Templates**: Uses configured frontmatter fields and types
+- **File Exclusions**: Honors exclusion patterns (if enabled in settings)
+- **Debug Logging**: Full logging support for troubleshooting
+
+### 🧪 Quality Assurance
+
+- **84 Tests Passing**: Comprehensive test suite including new manual command tests
+- **Security Validated**: No vulnerabilities in dependencies (`npm audit` clean)
+- **Cross-Platform**: Tested on Windows, macOS, and Linux
+- **Performance**: Minimal impact on Obsidian startup and operation
+
+### 📚 Documentation Updates
+
+- **README**: Added manual extraction section with examples
+- **Requirements**: Complete specification with acceptance criteria
+- **Design Document**: Detailed technical implementation guide
+- **Release Notes**: Comprehensive change documentation
+
+### 🔧 For Developers
+
+#### New API Methods
+- `executeManualTaskExtraction()`: Main command handler
+- `processFileManually()`: Core manual processing logic
+- Enhanced error handling and validation chains
+
+#### Test Coverage
+- Manual command notice validation
+- Error state handling
+- User feedback verification
+- Integration test improvements
+
+---
+
+## Installation
+
+Download from the Obsidian Community Plugins directory or install manually:
+
+1. Download `main.js`, `manifest.json`, and `styles.css`
+2. Place in `.obsidian/plugins/task-extractor/`
+3. Enable plugin in Obsidian settings
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/bloknayrb/obsidian-task-extractor/issues)
+- **Documentation**: See README.md for complete usage guide
+- **Requirements**: Obsidian 0.13.0+ required
+
+## What's Next
+
+Future releases will focus on:
+- Enhanced LLM model support
+- Additional frontmatter customization options
+- Performance optimizations
+- UI/UX improvements
+
+---
+
+**Full Changelog**: https://github.com/bloknayrb/obsidian-task-extractor/compare/v2.2.1...v2.2.2

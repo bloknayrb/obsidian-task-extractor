@@ -1818,29 +1818,39 @@ ${content}
     }, correlationId);
     const lines = [];
     lines.push("---");
+    lines.push(`Type: ${this.settings.defaultTaskType}`);
+    const missingRequiredFields = [];
     for (const field of this.settings.frontmatterFields) {
-      let value = extraction[field.key] || extraction[field.key.replace("_", "")] || field.defaultValue;
-      if (value === "{{date}}") {
-        value = new Date().toISOString().split("T")[0];
-      }
-      if (field.key === "task" && !value && extraction.task_title) {
-        value = extraction.task_title;
-      }
-      if (value) {
-        if (field.type === "text" && typeof value === "string" && value.includes(" ")) {
-          lines.push(`${field.key}: "${value}"`);
-        } else {
-          lines.push(`${field.key}: ${value}`);
+      let value = this.extractFieldValue(extraction, field);
+      if (field.required && (!value || value === "")) {
+        missingRequiredFields.push(field.key);
+        if (field.defaultValue && field.defaultValue !== "") {
+          value = field.defaultValue;
         }
       }
+      const formattedValue = this.formatFieldValue(value, field);
+      if (formattedValue !== null && formattedValue !== "") {
+        lines.push(`${field.key}: ${formattedValue}`);
+      } else if (field.required) {
+        lines.push(`${field.key}: ""`);
+      }
+    }
+    if (missingRequiredFields.length > 0) {
+      this.log("warn", "validation", "Missing required frontmatter fields", {
+        sourceFile: sourceFile.path,
+        taskTitle: extraction.task_title,
+        missingFields: missingRequiredFields
+      }, correlationId);
     }
     lines.push("---");
     lines.push("");
     lines.push(extraction.task_details || "");
     lines.push("");
-    if (this.settings.linkBack) {
-      const link = `[[${sourceFile.path}]]`;
-      lines.push(`Source: ${link}`);
+    const sourceFileName = sourceFile.basename;
+    const sourceLink = `[[${sourceFileName}]]`;
+    lines.push(`Source: ${sourceLink}`);
+    if (this.settings.linkBack && sourceFile.path !== sourceFileName) {
+      lines.push(`Source Path: [[${sourceFile.path}]]`);
     }
     if (extraction.source_excerpt) {
       lines.push("");
@@ -1871,6 +1881,104 @@ ${content}
   }
   makeFilenameSafe(title) {
     return title.replace(/[\\/:*?"<>|#%{}\\^~\[\]`;'@&=+]/g, "").replace(/\s+/g, "-").slice(0, 120);
+  }
+  /**
+   * Extract field value from extraction data with intelligent mapping
+   */
+  extractFieldValue(extraction, field) {
+    if (extraction[field.key] !== void 0) {
+      return extraction[field.key];
+    }
+    const keyWithoutUnderscores = field.key.replace(/_/g, "");
+    if (extraction[keyWithoutUnderscores] !== void 0) {
+      return extraction[keyWithoutUnderscores];
+    }
+    const fieldMappings = {
+      "task": ["task_title", "title"],
+      "task_title": ["task_title", "title"],
+      "details": ["task_details", "description"],
+      "task_details": ["task_details", "description"],
+      "due": ["due_date", "dueDate"],
+      "due_date": ["due_date", "dueDate"],
+      "priority": ["priority"],
+      "project": ["project"],
+      "client": ["client"],
+      "excerpt": ["source_excerpt", "sourceExcerpt"],
+      "source_excerpt": ["source_excerpt", "sourceExcerpt"],
+      "confidence": ["confidence"]
+    };
+    const mappings = fieldMappings[field.key] || [];
+    for (const mapping of mappings) {
+      if (extraction[mapping] !== void 0) {
+        return extraction[mapping];
+      }
+    }
+    if (field.defaultValue === "{{date}}") {
+      return new Date().toISOString().split("T")[0];
+    }
+    return field.defaultValue || "";
+  }
+  /**
+   * Format field value according to its type with proper YAML formatting
+   */
+  formatFieldValue(value, field) {
+    if (value === null || value === void 0) {
+      return null;
+    }
+    switch (field.type) {
+      case "text":
+        const textValue = String(value).trim();
+        if (!textValue)
+          return null;
+        if (textValue.includes(":") || textValue.includes("#") || textValue.includes("[") || textValue.includes("]") || textValue.includes("{") || textValue.includes("}") || textValue.includes("|") || textValue.includes(">") || textValue.includes("&") || textValue.includes("*") || textValue.includes("!") || textValue.includes("%") || textValue.includes("@") || textValue.includes("`") || textValue.includes('"') || textValue.includes("'") || textValue.includes("\\") || textValue.includes("\n") || textValue.includes("	") || /^\s/.test(textValue) || /\s$/.test(textValue) || textValue.includes("  ")) {
+          return `"${textValue.replace(/"/g, '\\"')}"`;
+        }
+        return textValue;
+      case "date":
+        if (!value || value === "")
+          return null;
+        if (value === "{{date}}") {
+          return new Date().toISOString().split("T")[0];
+        }
+        const dateStr = String(value).trim();
+        if (!dateStr)
+          return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          return dateStr;
+        }
+        try {
+          const date = new Date(dateStr);
+          if (!isNaN(date.getTime())) {
+            return date.toISOString().split("T")[0];
+          }
+        } catch (e) {
+        }
+        return null;
+      case "select":
+        const selectValue = String(value).trim().toLowerCase();
+        if (!selectValue)
+          return null;
+        if (field.options && field.options.length > 0) {
+          const matchingOption = field.options.find(
+            (option) => option.toLowerCase() === selectValue
+          );
+          return matchingOption || field.options[0];
+        }
+        return selectValue;
+      case "boolean":
+        if (typeof value === "boolean") {
+          return value.toString();
+        }
+        const boolStr = String(value).trim().toLowerCase();
+        if (boolStr === "true" || boolStr === "1" || boolStr === "yes" || boolStr === "on") {
+          return "true";
+        } else if (boolStr === "false" || boolStr === "0" || boolStr === "no" || boolStr === "off") {
+          return "false";
+        }
+        return "false";
+      default:
+        return String(value).trim() || null;
+    }
   }
   /**
    * Checks if a file path is excluded based on exact path matches
@@ -2102,6 +2210,82 @@ var ExtractorSettingTab = class extends import_obsidian3.PluginSettingTab {
     this.settings = settings;
     this.llmProvider = llmProvider;
     this.saveTimeout = null;
+    this.addStyles();
+  }
+  /**
+   * Add custom styles for the settings UI
+   */
+  addStyles() {
+    const styleId = "task-extractor-settings-styles";
+    const existingStyle = document.getElementById(styleId);
+    if (existingStyle) {
+      existingStyle.remove();
+    }
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      .task-extractor-field-editor {
+        margin-bottom: 20px !important;
+        padding: 16px !important;
+        background-color: var(--background-secondary) !important;
+        border-radius: 8px !important;
+        border: 1px solid var(--background-modifier-border) !important;
+      }
+      
+      .task-extractor-field-editor .setting-item {
+        border: none !important;
+        padding: 8px 0 !important;
+      }
+      
+      .task-extractor-field-editor .setting-item:last-child {
+        border-bottom: none !important;
+      }
+      
+      .task-extractor-status-success {
+        color: var(--text-success) !important;
+        font-weight: 500 !important;
+        margin-bottom: 12px !important;
+      }
+      
+      .task-extractor-status-error {
+        color: var(--text-error) !important;
+        font-weight: 500 !important;
+        margin-bottom: 12px !important;
+      }
+      
+      .task-extractor-examples {
+        margin-top: 16px !important;
+        padding: 12px !important;
+        background-color: var(--background-secondary) !important;
+        border-radius: 8px !important;
+        font-size: 0.9em !important;
+      }
+      
+      .task-extractor-slider-input-container {
+        display: flex !important;
+        align-items: center !important;
+        gap: 12px !important;
+        width: 100% !important;
+      }
+      
+      .task-extractor-slider {
+        flex: 1 !important;
+        min-width: 120px !important;
+        height: 20px !important;
+      }
+      
+      .task-extractor-number-input {
+        width: 80px !important;
+        text-align: center !important;
+        padding: 4px 8px !important;
+        border: 1px solid var(--background-modifier-border) !important;
+        border-radius: 4px !important;
+        background-color: var(--background-primary) !important;
+        color: var(--text-normal) !important;
+        font-size: 13px !important;
+      }
+    `;
+    document.head.appendChild(style);
   }
   // Debounced save to reduce save frequency
   debouncedSave() {
@@ -2113,11 +2297,15 @@ var ExtractorSettingTab = class extends import_obsidian3.PluginSettingTab {
       this.saveTimeout = null;
     }, 500);
   }
-  // Clean up timeout on hide
+  // Clean up timeout and styles on hide
   hide() {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
       this.saveTimeout = null;
+    }
+    const styleElement = document.getElementById("task-extractor-settings-styles");
+    if (styleElement) {
+      styleElement.remove();
     }
     super.hide();
   }
@@ -2375,7 +2563,16 @@ var ExtractorSettingTab = class extends import_obsidian3.PluginSettingTab {
   }
   addFrontmatterSection(containerEl) {
     containerEl.createEl("h3", { text: "Task Note Frontmatter" });
-    new import_obsidian3.Setting(containerEl).setName("Add Field").setDesc("Add a new frontmatter field").addButton((button) => button.setButtonText("Add Field").onClick(() => {
+    containerEl.createEl("p", {
+      text: "Configure the frontmatter fields that will be added to created task notes. Each field can have a specific type, default value, and be marked as required.",
+      cls: "setting-item-description"
+    });
+    new import_obsidian3.Setting(containerEl).setName("Default Task Type").setDesc('Default value for the "Type" field in created task notes. This helps categorize and filter your task notes.').addText((text) => text.setPlaceholder("Task").setValue(this.settings.defaultTaskType).onChange((v) => {
+      this.settings.defaultTaskType = v.trim() || "Task";
+      this.debouncedSave();
+    }));
+    containerEl.createEl("h4", { text: "Frontmatter Fields" });
+    new import_obsidian3.Setting(containerEl).setName("Add Field").setDesc("Add a new frontmatter field to the template").addButton((button) => button.setButtonText("Add Field").onClick(() => {
       this.settings.frontmatterFields.push({
         key: "new_field",
         defaultValue: "",
@@ -2386,13 +2583,9 @@ var ExtractorSettingTab = class extends import_obsidian3.PluginSettingTab {
       this.display();
     }));
     this.settings.frontmatterFields.forEach((field, index) => {
-      const fieldContainer = containerEl.createDiv({ cls: "task-extractor-field" });
-      new import_obsidian3.Setting(fieldContainer).setName(`Field ${index + 1}: ${field.key}`).setDesc(`Type: ${field.type}, Required: ${field.required ? "Yes" : "No"}`).addButton((button) => button.setButtonText("Remove").onClick(() => {
-        this.settings.frontmatterFields.splice(index, 1);
-        this.debouncedSave();
-        this.display();
-      }));
+      this.addFrontmatterFieldEditor(containerEl, field, index);
     });
+    containerEl.createEl("h4", { text: "Task Extraction Prompt" });
     new import_obsidian3.Setting(containerEl).setName("Custom Prompt").setDesc('Override the default task extraction prompt. Leave empty to use the built-in default prompt. Use the "Reset to Default" button below to restore the original prompt text.').addTextArea((text) => text.setPlaceholder("Enter custom prompt...").setValue(this.settings.customPrompt).onChange((v) => {
       this.settings.customPrompt = v;
       this.debouncedSave();
@@ -2403,6 +2596,83 @@ var ExtractorSettingTab = class extends import_obsidian3.PluginSettingTab {
       this.debouncedSave();
       this.display();
     }));
+  }
+  /**
+   * Creates an enhanced editor for a single frontmatter field
+   */
+  addFrontmatterFieldEditor(containerEl, field, index) {
+    const fieldContainer = containerEl.createDiv({ cls: "task-extractor-field-editor" });
+    const headerSetting = new import_obsidian3.Setting(fieldContainer).setName(`Field ${index + 1}`).setDesc(`Configure frontmatter field properties`).addButton((button) => button.setButtonText("Remove").setTooltip("Remove this field from the template").onClick(() => {
+      this.settings.frontmatterFields.splice(index, 1);
+      this.debouncedSave();
+      this.display();
+    }));
+    new import_obsidian3.Setting(fieldContainer).setName("Field Name").setDesc("The frontmatter key name (must be valid YAML key)").addText((text) => text.setPlaceholder("field_name").setValue(field.key).onChange((v) => {
+      const validatedKey = this.validateFrontmatterFieldName(v.trim());
+      field.key = validatedKey;
+      this.debouncedSave();
+      if (validatedKey !== v.trim()) {
+        this.showValidationFeedback(text.inputEl, "Invalid field name. Must start with letter/underscore and contain only letters, numbers, underscores, hyphens, and dots.");
+        text.setValue(validatedKey);
+      }
+    }));
+    new import_obsidian3.Setting(fieldContainer).setName("Field Type").setDesc("The data type for this field").addDropdown((dropdown) => dropdown.addOption("text", "Text").addOption("date", "Date").addOption("select", "Select (dropdown)").addOption("boolean", "Boolean (true/false)").setValue(field.type).onChange((v) => {
+      field.type = v;
+      this.debouncedSave();
+      this.display();
+    }));
+    new import_obsidian3.Setting(fieldContainer).setName("Default Value").setDesc("Default value for this field (use {{date}} for current date)").addText((text) => text.setPlaceholder(this.getDefaultValuePlaceholder(field.type)).setValue(field.defaultValue).onChange((v) => {
+      field.defaultValue = v;
+      this.debouncedSave();
+    }));
+    if (field.type === "select") {
+      new import_obsidian3.Setting(fieldContainer).setName("Select Options").setDesc("Comma-separated list of options for the dropdown").addText((text) => text.setPlaceholder("option1, option2, option3").setValue(field.options ? field.options.join(", ") : "").onChange((v) => {
+        field.options = v.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+        this.debouncedSave();
+      }));
+    }
+    new import_obsidian3.Setting(fieldContainer).setName("Required Field").setDesc("Whether this field must have a value").addToggle((toggle) => toggle.setValue(field.required).onChange((v) => {
+      field.required = v;
+      this.debouncedSave();
+    }));
+    fieldContainer.style.marginBottom = "20px";
+    fieldContainer.style.padding = "16px";
+    fieldContainer.style.backgroundColor = "var(--background-secondary)";
+    fieldContainer.style.borderRadius = "8px";
+    fieldContainer.style.border = "1px solid var(--background-modifier-border)";
+  }
+  /**
+   * Validates frontmatter field name according to YAML key format
+   */
+  validateFrontmatterFieldName(fieldName) {
+    if (!fieldName || fieldName.length === 0) {
+      return "field";
+    }
+    const yamlKeyPattern = /^[a-zA-Z_][a-zA-Z0-9_.-]*$/;
+    if (!yamlKeyPattern.test(fieldName)) {
+      return "field";
+    }
+    if (fieldName.includes("..") || fieldName.startsWith(".") || fieldName.endsWith(".")) {
+      return "field";
+    }
+    return fieldName;
+  }
+  /**
+   * Gets appropriate placeholder text for default value based on field type
+   */
+  getDefaultValuePlaceholder(type) {
+    switch (type) {
+      case "text":
+        return "Enter default text...";
+      case "date":
+        return "{{date}} or YYYY-MM-DD";
+      case "select":
+        return "Choose from options above";
+      case "boolean":
+        return "true or false";
+      default:
+        return "Enter default value...";
+    }
   }
   addDebugSection(containerEl) {
     containerEl.createEl("h3", { text: "Debug Settings" });

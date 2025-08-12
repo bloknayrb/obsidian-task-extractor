@@ -40,12 +40,12 @@ An Obsidian plugin that extracts actionable tasks from notes using Large Languag
 
 ### Quality & Reliability Improvements (v2.0)
 - **Race Condition Prevention** - Atomic file processing with proper cleanup and timeout protection
-- **Enhanced Type Safety** - Comprehensive type guards and runtime validation, eliminated unsafe casting
+- **Enhanced Type Safety** - Type guards and runtime validation, eliminated unsafe casting
 - **Optimized Batch Processing** - Controlled concurrency with memory monitoring and progress feedback
 - **Standardized Error Handling** - Custom error classes with user-friendly messages and recovery strategies
 - **Memory Management** - Automatic cleanup, size limits, and leak prevention for long-running sessions
 - **String Operation Optimization** - 20%+ performance improvement through precompiled regex patterns
-- **Structured Logging** - Comprehensive debugging with contextual information and performance timing
+- **Structured Logging** - Debugging with contextual information and performance timing
 
 ## Installation and Setup
 

@@ -27,6 +27,7 @@ This test suite validates the implementation of the flexible frontmatter filteri
 - **Settings persistence**: Tests that settings are properly validated when loaded
 - **Backward compatibility**: Tests that existing configurations work without modification
 - **Error handling**: Tests graceful handling of corrupted settings and missing configuration
+- **Reset functionality**: Tests reset button behavior, debounced saves, and UI consistency
 
 ## Key Test Scenarios
 
@@ -47,6 +48,15 @@ This test suite validates the implementation of the flexible frontmatter filteri
 - ✅ NaN values are handled gracefully with fallback to defaults
 - ✅ Slider-input synchronization works in both directions
 - ✅ Validation feedback is provided for invalid inputs
+
+### Reset Functionality
+- ✅ Reset button updates text area with default prompt
+- ✅ Reset triggers debounced save mechanism (500ms delay)
+- ✅ Reset works when custom prompt is empty
+- ✅ Reset works when custom prompt contains default text
+- ✅ Settings object updated immediately for UI consistency
+- ✅ Graceful handling of empty owner names during reset
+- ✅ Display refresh functionality after reset
 
 ### Backward Compatibility
 - ✅ Existing configurations without `triggerFrontmatterField` default to "Type"

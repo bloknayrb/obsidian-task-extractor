@@ -131,6 +131,36 @@ describe('Types - Settings Validation', () => {
     });
   });
 
+  describe('defaultTaskType validation', () => {
+    it('should validate and trim defaultTaskType', () => {
+      const settings: Partial<ExtractorSettings> = {
+        defaultTaskType: '  Custom Task  '
+      };
+      
+      const validated = validateSettings(settings);
+      
+      expect(validated.defaultTaskType).toBe('Custom Task');
+    });
+
+    it('should use default value when defaultTaskType is empty', () => {
+      const settings: Partial<ExtractorSettings> = {
+        defaultTaskType: '   '
+      };
+      
+      const validated = validateSettings(settings);
+      
+      expect(validated.defaultTaskType).toBe('Task');
+    });
+
+    it('should use default value when defaultTaskType is not provided', () => {
+      const settings: Partial<ExtractorSettings> = {};
+      
+      const validated = validateSettings(settings);
+      
+      expect(validated.defaultTaskType).toBe('Task');
+    });
+  });
+
   describe('backward compatibility', () => {
     it('should preserve existing configurations', () => {
       const existingSettings: Partial<ExtractorSettings> = {
@@ -149,6 +179,7 @@ describe('Types - Settings Validation', () => {
       expect(validated.ownerName).toBe('Test User');
       expect(validated.tasksFolder).toBe('MyTasks');
       expect(validated.triggerFrontmatterField).toBe('Type'); // Should default
+      expect(validated.defaultTaskType).toBe('Task'); // Should default
     });
   });
 });

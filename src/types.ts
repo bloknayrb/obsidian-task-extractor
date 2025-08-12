@@ -45,6 +45,7 @@ export interface ExtractorSettings {
   // Customizable frontmatter
   frontmatterFields: FrontmatterField[];
   customPrompt: string;
+  defaultTaskType: string; // default "Type" value for created tasks
   
   // Advanced settings
   maxTokens: number;
@@ -86,6 +87,27 @@ export interface TaskExtraction {
   [key: string]: any; // Allow additional extracted fields
 }
 
+export const DEFAULT_EXTRACTION_PROMPT = `You are a task extraction specialist. Extract actionable tasks from emails and meeting notes following these strict rules:
+
+EXTRACTION RULES:
+- Extract ONLY concrete, actionable tasks explicitly stated or clearly implied
+- Use null for uncertain/missing information - DO NOT GUESS
+- Extract tasks only for the specified person: {ownerName} (exact name)
+- If no clear tasks exist, return {"found": false, "tasks": []}
+
+PRIORITY GUIDELINES:
+- high: explicit urgency/deadline mentioned
+- medium: standard requests without time pressure  
+- low: optional/background items
+
+VALIDATION CONSTRAINTS:
+- task_title: 6-100 characters, actionable phrasing
+- task_details: max 300 characters, concrete description
+- due_date: YYYY-MM-DD format only if explicitly mentioned
+- source_excerpt: exact quote (max 150 chars) justifying extraction
+
+Return valid JSON only. Be conservative - accuracy over completeness.`;
+
 export const DEFAULT_FRONTMATTER_FIELDS: FrontmatterField[] = [
   { key: 'task', defaultValue: '', type: 'text', required: true },
   { key: 'status', defaultValue: 'inbox', type: 'select', options: ['inbox', 'next', 'waiting', 'someday', 'done', 'cancelled'], required: true },
@@ -124,6 +146,7 @@ export const DEFAULT_SETTINGS: ExtractorSettings = {
   // Customizable frontmatter
   frontmatterFields: DEFAULT_FRONTMATTER_FIELDS,
   customPrompt: '',
+  defaultTaskType: 'Task',
   
   // Advanced settings
   maxTokens: 800,
@@ -162,6 +185,9 @@ export function validateSettings(settings: Partial<ExtractorSettings>, debugLogg
     validated.ownerName = settings.ownerName.trim();
   }
   if (typeof settings.customPrompt === 'string') validated.customPrompt = settings.customPrompt;
+  if (typeof settings.defaultTaskType === 'string' && settings.defaultTaskType.trim()) {
+    validated.defaultTaskType = settings.defaultTaskType.trim();
+  }
 
   // Validate processed frontmatter key (can be nested like "taskExtractor.processed")
   if (typeof settings.processedFrontmatterKey === 'string') {

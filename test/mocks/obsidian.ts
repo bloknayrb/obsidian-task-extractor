@@ -21,6 +21,7 @@ export class Vault {
   modify = vi.fn();
   getFiles = vi.fn();
   getMarkdownFiles = vi.fn();
+  getAbstractFileByPath = vi.fn();
 }
 
 export class App {
@@ -28,6 +29,12 @@ export class App {
   workspace = {
     on: vi.fn(),
     off: vi.fn(),
+  };
+  metadataCache = {
+    getFileCache: vi.fn(),
+  };
+  fileManager = {
+    processFrontMatter: vi.fn(),
   };
 }
 

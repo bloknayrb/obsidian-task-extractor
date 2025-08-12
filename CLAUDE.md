@@ -30,7 +30,7 @@ The main plugin file is `obsidian_task_extractor.ts`. The core functionality rev
 3. **File exclusion system**: Filters out files based on exact paths and glob patterns before processing
 4. **Metadata handling**: Extracts project and client information, defaulting to null if not present
 5. **Note creation**: Creates new task notes with proper frontmatter structure
-6. **Debug logging system**: Comprehensive logging infrastructure with performance optimizations
+6. **Debug logging system**: Logging infrastructure with performance optimizations
 
 ### Model Selection and Defaults
 
@@ -64,7 +64,7 @@ The exclusion system (`src/task-processor.ts`) provides:
 - **Exact path matching**: Direct file/folder path exclusions (e.g., `"Templates/"`, `"private.md"`)
 - **Glob pattern support**: Wildcard patterns (`*.template.md`, `**/drafts/**`, `Archive/**`)
 - **Cross-platform compatibility**: Normalized path separators for Windows/Mac/Linux
-- **Performance optimization**: Early exclusion checks to minimize processing overhead
+- **Performance optimization**: Early exclusion checks to reduce processing overhead
 - **Pattern validation**: Input sanitization and error handling for invalid patterns
 
 Key exclusion methods:
@@ -86,14 +86,14 @@ Key exclusion methods:
 ### Current Dependency Versions (as of v2.1.5)
 - **esbuild**: ^0.25.8 (critical security fixes included)
 - **vite**: 7.1.1 (latest stable)
-- **vitest**: ^3.2.4 (comprehensive testing framework)
+- **vitest**: ^3.2.4 (testing framework)
 - **TypeScript**: ^5.9.2 (modern language features)
 - **ESLint**: ^9.33.0 with TypeScript support ^8.39.1
 
 ### Development Environment
 - **Tooling**: ESLint 9.x with TypeScript integration
 - **Type safety**: TypeScript coverage with CodeMirror declarations
-- **Testing**: 50+ tests with Vitest for reliability
+- **Testing**: 150+ tests with Vitest for reliability
 - **Security auditing**: Automated dependency vulnerability scanning
 - **Error handling**: API error validation and debugging
 

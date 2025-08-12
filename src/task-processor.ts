@@ -3,7 +3,7 @@
  */
 
 import { App, TFile, Notice } from 'obsidian';
-import { ExtractorSettings, TaskExtraction, TaskExtractionResult, ExtractedTask, DEFAULT_EXTRACTION_PROMPT } from './types';
+import { ExtractorSettings, TaskExtraction, TaskExtractionResult, ExtractedTask, FrontmatterField, DEFAULT_EXTRACTION_PROMPT } from './types';
 import { LLMProviderManager } from './llm-providers';
 import { DebugLogger } from './debug-logger';
 
@@ -851,31 +851,46 @@ When no tasks found, return: {"found": false, "tasks": []}`;
       filename: path.split('/').pop()
     }, correlationId);
 
-    // Generate frontmatter using customizable fields
+    // Generate frontmatter using configured fields with type-specific formatting
     const lines: string[] = [];
     lines.push('---');
     
+    // Always add Type field with defaultTaskType value (requirement 7.1, 7.2, 7.3)
+    lines.push(`Type: ${this.settings.defaultTaskType}`);
+    
+    // Track missing required fields for validation
+    const missingRequiredFields: string[] = [];
+    
     for (const field of this.settings.frontmatterFields) {
-      let value = extraction[field.key] || extraction[field.key.replace('_', '')] || field.defaultValue;
+      let value = this.extractFieldValue(extraction, field);
       
-      // Handle special value replacements
-      if (value === '{{date}}') {
-        value = new Date().toISOString().split('T')[0];
-      }
-      
-      // Map common extraction keys to field keys
-      if (field.key === 'task' && !value && extraction.task_title) {
-        value = extraction.task_title;
-      }
-      
-      if (value) {
-        // Quote string values appropriately
-        if (field.type === 'text' && typeof value === 'string' && value.includes(' ')) {
-          lines.push(`${field.key}: "${value}"`);
-        } else {
-          lines.push(`${field.key}: ${value}`);
+      // Handle required field validation
+      if (field.required && (!value || value === '')) {
+        missingRequiredFields.push(field.key);
+        // Use default value for required fields if available
+        if (field.defaultValue && field.defaultValue !== '') {
+          value = field.defaultValue;
         }
       }
+      
+      // Apply field type-specific formatting and validation
+      const formattedValue = this.formatFieldValue(value, field);
+      
+      if (formattedValue !== null && formattedValue !== '') {
+        lines.push(`${field.key}: ${formattedValue}`);
+      } else if (field.required) {
+        // For required fields without values, add empty placeholder
+        lines.push(`${field.key}: ""`);
+      }
+    }
+    
+    // Log validation warnings for missing required fields
+    if (missingRequiredFields.length > 0) {
+      this.log('warn', 'validation', 'Missing required frontmatter fields', {
+        sourceFile: sourceFile.path,
+        taskTitle: extraction.task_title,
+        missingFields: missingRequiredFields
+      }, correlationId);
     }
     
     lines.push('---');
@@ -883,9 +898,15 @@ When no tasks found, return: {"found": false, "tasks": []}`;
     lines.push(extraction.task_details || '');
     lines.push('');
     
-    if (this.settings.linkBack) {
-      const link = `[[${sourceFile.path}]]`;
-      lines.push(`Source: ${link}`);
+    // Always include source note link (requirement 6.1, 6.2, 6.3)
+    const sourceFileName = sourceFile.basename; // Gets filename without .md extension
+    const sourceLink = `[[${sourceFileName}]]`;
+    lines.push(`Source: ${sourceLink}`);
+    
+    // Maintain backward compatibility with linkBack setting
+    if (this.settings.linkBack && sourceFile.path !== sourceFileName) {
+      // If linkBack is enabled and the path differs from basename, also include full path
+      lines.push(`Source Path: [[${sourceFile.path}]]`);
     }
     
     if (extraction.source_excerpt) {
@@ -920,6 +941,141 @@ When no tasks found, return: {"found": false, "tasks": []}`;
 
   private makeFilenameSafe(title: string) {
     return title.replace(/[\\/:*?"<>|#%{}\\^~\[\]`;'@&=+]/g, '').replace(/\s+/g, '-').slice(0, 120);
+  }
+
+  /**
+   * Extract field value from extraction data with intelligent mapping
+   */
+  private extractFieldValue(extraction: TaskExtraction | ExtractedTask, field: FrontmatterField): any {
+    // Direct key match (exact)
+    if (extraction[field.key] !== undefined) {
+      return extraction[field.key];
+    }
+    
+    // Try key without underscores (e.g., task_title -> tasktitle)
+    const keyWithoutUnderscores = field.key.replace(/_/g, '');
+    if (extraction[keyWithoutUnderscores] !== undefined) {
+      return extraction[keyWithoutUnderscores];
+    }
+    
+    // Common field mappings for backward compatibility
+    const fieldMappings: Record<string, string[]> = {
+      'task': ['task_title', 'title'],
+      'task_title': ['task_title', 'title'],
+      'details': ['task_details', 'description'],
+      'task_details': ['task_details', 'description'],
+      'due': ['due_date', 'dueDate'],
+      'due_date': ['due_date', 'dueDate'],
+      'priority': ['priority'],
+      'project': ['project'],
+      'client': ['client'],
+      'excerpt': ['source_excerpt', 'sourceExcerpt'],
+      'source_excerpt': ['source_excerpt', 'sourceExcerpt'],
+      'confidence': ['confidence']
+    };
+    
+    const mappings = fieldMappings[field.key] || [];
+    for (const mapping of mappings) {
+      if (extraction[mapping] !== undefined) {
+        return extraction[mapping];
+      }
+    }
+    
+    // Handle special template values
+    if (field.defaultValue === '{{date}}') {
+      return new Date().toISOString().split('T')[0];
+    }
+    
+    // Return default value if no extraction value found
+    return field.defaultValue || '';
+  }
+
+  /**
+   * Format field value according to its type with proper YAML formatting
+   */
+  private formatFieldValue(value: any, field: FrontmatterField): string | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    
+    switch (field.type) {
+      case 'text':
+        const textValue = String(value).trim();
+        if (!textValue) return null;
+        
+        // Quote strings that contain special YAML characters or spaces
+        if (textValue.includes(':') || textValue.includes('#') || textValue.includes('[') || 
+            textValue.includes(']') || textValue.includes('{') || textValue.includes('}') ||
+            textValue.includes('|') || textValue.includes('>') || textValue.includes('&') ||
+            textValue.includes('*') || textValue.includes('!') || textValue.includes('%') ||
+            textValue.includes('@') || textValue.includes('`') || textValue.includes('"') ||
+            textValue.includes("'") || textValue.includes('\\') || textValue.includes('\n') ||
+            textValue.includes('\t') || /^\s/.test(textValue) || /\s$/.test(textValue) ||
+            textValue.includes('  ')) {
+          // Escape quotes in the value and wrap in quotes
+          return `"${textValue.replace(/"/g, '\\"')}"`;
+        }
+        return textValue;
+        
+      case 'date':
+        if (!value || value === '') return null;
+        
+        // Handle template values
+        if (value === '{{date}}') {
+          return new Date().toISOString().split('T')[0];
+        }
+        
+        // Validate and format date
+        const dateStr = String(value).trim();
+        if (!dateStr) return null;
+        
+        // Check if it's already in YYYY-MM-DD format
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          return dateStr;
+        }
+        
+        // Try to parse and format the date
+        try {
+          const date = new Date(dateStr);
+          if (!isNaN(date.getTime())) {
+            return date.toISOString().split('T')[0];
+          }
+        } catch (e) {
+          // Invalid date, return null
+        }
+        return null;
+        
+      case 'select':
+        const selectValue = String(value).trim().toLowerCase();
+        if (!selectValue) return null;
+        
+        // Validate against options if provided
+        if (field.options && field.options.length > 0) {
+          const matchingOption = field.options.find((option: string) => 
+            option.toLowerCase() === selectValue
+          );
+          return matchingOption || field.options[0]; // Default to first option if no match
+        }
+        return selectValue;
+        
+      case 'boolean':
+        if (typeof value === 'boolean') {
+          return value.toString();
+        }
+        
+        const boolStr = String(value).trim().toLowerCase();
+        if (boolStr === 'true' || boolStr === '1' || boolStr === 'yes' || boolStr === 'on') {
+          return 'true';
+        } else if (boolStr === 'false' || boolStr === '0' || boolStr === 'no' || boolStr === 'off') {
+          return 'false';
+        }
+        
+        // Default to false for invalid boolean values
+        return 'false';
+        
+      default:
+        return String(value).trim() || null;
+    }
   }
 
   /**

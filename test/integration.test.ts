@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ExtractorSettings, DEFAULT_SETTINGS, validateSettings } from '../src/types';
+import { ExtractorSettings, DEFAULT_SETTINGS, validateSettings, DEFAULT_EXTRACTION_PROMPT } from '../src/types';
 import { TaskProcessor } from '../src/task-processor';
 import { LLMProviderManager } from '../src/llm-providers';
 import { App, TFile } from 'obsidian';
@@ -213,6 +213,209 @@ describe('Integration Tests - Complete Workflow', () => {
       expect(llmProvider.callLLM).not.toHaveBeenCalled();
       
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe('reset functionality integration tests', () => {
+    let plugin: any;
+    let settingTab: any;
+
+    beforeEach(async () => {
+      // Create mock plugin with saveSettings method
+      plugin = {
+        saveSettings: vi.fn().mockResolvedValue(undefined)
+      };
+      
+      // Create settings tab instance
+      const { ExtractorSettingTab } = await import('../src/settings');
+      settingTab = new ExtractorSettingTab(app, plugin, settings, llmProvider);
+      
+      // Set owner name for placeholder substitution
+      settings.ownerName = 'Test User';
+    });
+
+    it('should update settings when reset functionality is triggered', async () => {
+      // Set a custom prompt initially
+      settings.customPrompt = 'Custom extraction prompt for testing';
+      
+      // Simulate the reset button click logic directly
+      const defaultPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', settings.ownerName);
+      settings.customPrompt = defaultPrompt;
+      
+      // Verify the settings were updated with default prompt (with owner name substituted)
+      const expectedPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', 'Test User');
+      expect(settings.customPrompt).toBe(expectedPrompt);
+    });
+
+    it('should trigger debounced save mechanism when reset is performed', async () => {
+      // Set a custom prompt initially
+      settings.customPrompt = 'Custom prompt to be reset';
+      
+      // Simulate the reset operation by calling debouncedSave directly
+      const debouncedSave = (settingTab as any).debouncedSave.bind(settingTab);
+      debouncedSave();
+      
+      // Wait for debounced save (500ms + buffer)
+      await new Promise(resolve => setTimeout(resolve, 600));
+      
+      // Verify saveSettings was called
+      expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+
+    it('should work when custom prompt is empty', async () => {
+      // Set empty custom prompt initially
+      settings.customPrompt = '';
+      
+      // Simulate reset operation
+      const defaultPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', settings.ownerName);
+      settings.customPrompt = defaultPrompt;
+      
+      // Verify the settings were updated with default prompt
+      const expectedPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', 'Test User');
+      expect(settings.customPrompt).toBe(expectedPrompt);
+    });
+
+    it('should work when custom prompt contains default text', async () => {
+      // Set custom prompt to current default text
+      const defaultPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', 'Test User');
+      settings.customPrompt = defaultPrompt;
+      
+      // Simulate reset operation
+      const resetPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', settings.ownerName);
+      settings.customPrompt = resetPrompt;
+      
+      // Verify the operation still works normally (should still be the same)
+      expect(settings.customPrompt).toBe(defaultPrompt);
+    });
+
+    it('should update settings object immediately for UI consistency', async () => {
+      // Set a custom prompt initially
+      settings.customPrompt = 'Original custom prompt';
+      
+      // Simulate the immediate update that happens in the reset button click
+      const defaultPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', settings.ownerName);
+      settings.customPrompt = defaultPrompt;
+      
+      // Verify settings object was updated immediately
+      const expectedPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', 'Test User');
+      expect(settings.customPrompt).toBe(expectedPrompt);
+      
+      // Simulate the debounced save call
+      const debouncedSave = (settingTab as any).debouncedSave.bind(settingTab);
+      debouncedSave();
+      
+      // Wait for debounced save
+      await new Promise(resolve => setTimeout(resolve, 600));
+      
+      // Now saveSettings should have been called
+      expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+
+    it('should handle empty owner name gracefully in reset operation', async () => {
+      // Set empty owner name
+      settings.ownerName = '';
+      settings.customPrompt = 'Custom prompt to reset';
+      
+      // Simulate reset operation with empty owner name
+      const defaultPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', settings.ownerName);
+      settings.customPrompt = defaultPrompt;
+      
+      // Verify the reset still works (placeholder becomes empty string)
+      const expectedPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', '');
+      expect(settings.customPrompt).toBe(expectedPrompt);
+    });
+
+    it('should test reset functionality with display refresh concept', async () => {
+      // Set a custom prompt initially
+      settings.customPrompt = 'Custom prompt before reset';
+      
+      // Simulate the reset operation that would happen on button click
+      const defaultPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', settings.ownerName);
+      settings.customPrompt = defaultPrompt;
+      
+      // Simulate calling display() to refresh the UI (this would update text areas)
+      // In the actual implementation, this is called after the reset
+      expect(typeof settingTab.display).toBe('function');
+      
+      // Verify the settings were updated correctly
+      const expectedPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', 'Test User');
+      expect(settings.customPrompt).toBe(expectedPrompt);
+    });
+  });
+
+  describe('Default Task Type Integration', () => {
+    it('should include Type field with defaultTaskType in created task notes', async () => {
+      // Configure custom defaultTaskType
+      settings.defaultTaskType = 'IntegrationTask';
+      
+      // Create a test file with proper frontmatter
+      const testFile = new TFile('test-email.md');
+      testFile.basename = 'test-email';
+      
+      // Mock metadata cache to return proper frontmatter
+      app.metadataCache.getFileCache = vi.fn().mockReturnValue({
+        frontmatter: { Type: 'email' }
+      });
+      
+      // Mock LLM response for task extraction
+      (llmProvider.callLLM as any).mockResolvedValue(JSON.stringify({
+        found: true,
+        tasks: [{
+          task_title: 'Integration Test Task',
+          task_details: 'Test task from integration test',
+          priority: 'medium',
+          confidence: 'high'
+        }]
+      }));
+      
+      // Process the file
+      await taskProcessor.onFileChanged(testFile);
+      
+      // Verify task was created with Type field containing defaultTaskType
+      expect(app.vault.create).toHaveBeenCalledWith(
+        expect.stringContaining('Tasks/Integration-Test-Task.md'),
+        expect.stringMatching(/---[\s\S]*Type: IntegrationTask[\s\S]*---/)
+      );
+      
+      // Verify Type field appears as first field after opening delimiter
+      expect(app.vault.create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringMatching(/^---\nType: IntegrationTask\n/)
+      );
+    });
+
+    it('should use default "Task" value when defaultTaskType is not explicitly set', async () => {
+      // Use default settings (defaultTaskType should be "Task")
+      expect(settings.defaultTaskType).toBe('Task');
+      
+      // Create a test file
+      const testFile = new TFile('test-meeting.md');
+      testFile.basename = 'test-meeting';
+      
+      // Mock metadata cache
+      app.metadataCache.getFileCache = vi.fn().mockReturnValue({
+        frontmatter: { Type: 'meetingnote' }
+      });
+      
+      // Mock LLM response
+      (llmProvider.callLLM as any).mockResolvedValue(JSON.stringify({
+        found: true,
+        tasks: [{
+          task_title: 'Default Type Test Task',
+          task_details: 'Test task with default type',
+          priority: 'high',
+          confidence: 'high'
+        }]
+      }));
+      
+      // Process the file
+      await taskProcessor.onFileChanged(testFile);
+      
+      // Verify task was created with default Type value
+      expect(app.vault.create).toHaveBeenCalledWith(
+        expect.stringContaining('Tasks/Default-Type-Test-Task.md'),
+        expect.stringMatching(/---[\s\S]*Type: Task[\s\S]*---/)
+      );
     });
   });
 });

@@ -3,7 +3,7 @@
  */
 
 import { App, PluginSettingTab, Setting } from 'obsidian';
-import { ExtractorSettings, LLMService } from './types';
+import { ExtractorSettings, LLMService, DEFAULT_EXTRACTION_PROMPT } from './types';
 import { LLMProviderManager } from './llm-providers';
 
 export class ExtractorSettingTab extends PluginSettingTab {
@@ -16,6 +16,88 @@ export class ExtractorSettingTab extends PluginSettingTab {
     private llmProvider: LLMProviderManager
   ) {
     super(app, plugin);
+    this.addStyles();
+  }
+
+  /**
+   * Add custom styles for the settings UI
+   */
+  private addStyles(): void {
+    const styleId = 'task-extractor-settings-styles';
+    
+    // Remove existing styles if they exist
+    const existingStyle = document.getElementById(styleId);
+    if (existingStyle) {
+      existingStyle.remove();
+    }
+    
+    // Add new styles
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .task-extractor-field-editor {
+        margin-bottom: 20px !important;
+        padding: 16px !important;
+        background-color: var(--background-secondary) !important;
+        border-radius: 8px !important;
+        border: 1px solid var(--background-modifier-border) !important;
+      }
+      
+      .task-extractor-field-editor .setting-item {
+        border: none !important;
+        padding: 8px 0 !important;
+      }
+      
+      .task-extractor-field-editor .setting-item:last-child {
+        border-bottom: none !important;
+      }
+      
+      .task-extractor-status-success {
+        color: var(--text-success) !important;
+        font-weight: 500 !important;
+        margin-bottom: 12px !important;
+      }
+      
+      .task-extractor-status-error {
+        color: var(--text-error) !important;
+        font-weight: 500 !important;
+        margin-bottom: 12px !important;
+      }
+      
+      .task-extractor-examples {
+        margin-top: 16px !important;
+        padding: 12px !important;
+        background-color: var(--background-secondary) !important;
+        border-radius: 8px !important;
+        font-size: 0.9em !important;
+      }
+      
+      .task-extractor-slider-input-container {
+        display: flex !important;
+        align-items: center !important;
+        gap: 12px !important;
+        width: 100% !important;
+      }
+      
+      .task-extractor-slider {
+        flex: 1 !important;
+        min-width: 120px !important;
+        height: 20px !important;
+      }
+      
+      .task-extractor-number-input {
+        width: 80px !important;
+        text-align: center !important;
+        padding: 4px 8px !important;
+        border: 1px solid var(--background-modifier-border) !important;
+        border-radius: 4px !important;
+        background-color: var(--background-primary) !important;
+        color: var(--text-normal) !important;
+        font-size: 13px !important;
+      }
+    `;
+    
+    document.head.appendChild(style);
   }
 
   // Debounced save to reduce save frequency
@@ -30,12 +112,19 @@ export class ExtractorSettingTab extends PluginSettingTab {
     }, 500);
   }
 
-  // Clean up timeout on hide
+  // Clean up timeout and styles on hide
   hide() {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
       this.saveTimeout = null;
     }
+    
+    // Clean up styles
+    const styleElement = document.getElementById('task-extractor-settings-styles');
+    if (styleElement) {
+      styleElement.remove();
+    }
+    
     super.hide();
   }
 
@@ -479,10 +568,31 @@ export class ExtractorSettingTab extends PluginSettingTab {
   private addFrontmatterSection(containerEl: HTMLElement): void {
     containerEl.createEl('h3', { text: 'Task Note Frontmatter' });
     
+    // Add description
+    containerEl.createEl('p', {
+      text: 'Configure the frontmatter fields that will be added to created task notes. Each field can have a specific type, default value, and be marked as required.',
+      cls: 'setting-item-description'
+    });
+    
+    // Default Task Type setting
+    new Setting(containerEl)
+      .setName('Default Task Type')
+      .setDesc('Default value for the "Type" field in created task notes. This helps categorize and filter your task notes.')
+      .addText(text => text
+        .setPlaceholder('Task')
+        .setValue(this.settings.defaultTaskType)
+        .onChange((v) => { 
+          this.settings.defaultTaskType = v.trim() || 'Task'; 
+          this.debouncedSave(); 
+        }));
+    
+    // Frontmatter Fields Management
+    containerEl.createEl('h4', { text: 'Frontmatter Fields' });
+    
     // Add field button
     new Setting(containerEl)
       .setName('Add Field')
-      .setDesc('Add a new frontmatter field')
+      .setDesc('Add a new frontmatter field to the template')
       .addButton(button => button
         .setButtonText('Add Field')
         .onClick(() => {
@@ -496,30 +606,185 @@ export class ExtractorSettingTab extends PluginSettingTab {
           this.display();
         }));
     
-    // Display existing fields
+    // Display existing fields with enhanced editing
     this.settings.frontmatterFields.forEach((field, index) => {
-      const fieldContainer = containerEl.createDiv({ cls: 'task-extractor-field' });
-      
-      new Setting(fieldContainer)
-        .setName(`Field ${index + 1}: ${field.key}`)
-        .setDesc(`Type: ${field.type}, Required: ${field.required ? 'Yes' : 'No'}`)
-        .addButton(button => button
-          .setButtonText('Remove')
-          .onClick(() => {
-            this.settings.frontmatterFields.splice(index, 1);
-            this.debouncedSave();
-            this.display();
-          }));
+      this.addFrontmatterFieldEditor(containerEl, field, index);
     });
     
-    // Custom prompt
+    // Custom prompt section
+    containerEl.createEl('h4', { text: 'Task Extraction Prompt' });
+    
     new Setting(containerEl)
       .setName('Custom Prompt')
-      .setDesc('Override the default task extraction prompt. Leave empty to use default.')
+      .setDesc('Override the default task extraction prompt. Leave empty to use the built-in default prompt. Use the "Reset to Default" button below to restore the original prompt text.')
       .addTextArea(text => text
         .setPlaceholder('Enter custom prompt...')
         .setValue(this.settings.customPrompt)
         .onChange((v) => { this.settings.customPrompt = v; this.debouncedSave(); }));
+    
+    // Reset to default button
+    new Setting(containerEl)
+      .setName('Reset to Default')
+      .setDesc('Restore the default task extraction prompt.')
+      .addButton(button => button
+        .setButtonText('Reset to Default')
+        .onClick(() => {
+          // Replace placeholder with actual owner name
+          const defaultPrompt = DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', this.settings.ownerName);
+          
+          // Update the settings immediately for UI consistency
+          this.settings.customPrompt = defaultPrompt;
+          
+          // Trigger debounced save to persist changes
+          this.debouncedSave();
+          
+          // Refresh the display to update the text area
+          this.display();
+        }));
+  }
+
+  /**
+   * Creates an enhanced editor for a single frontmatter field
+   */
+  private addFrontmatterFieldEditor(containerEl: HTMLElement, field: any, index: number): void {
+    const fieldContainer = containerEl.createDiv({ cls: 'task-extractor-field-editor' });
+    
+    // Field header with remove button
+    const headerSetting = new Setting(fieldContainer)
+      .setName(`Field ${index + 1}`)
+      .setDesc(`Configure frontmatter field properties`)
+      .addButton(button => button
+        .setButtonText('Remove')
+        .setTooltip('Remove this field from the template')
+        .onClick(() => {
+          this.settings.frontmatterFields.splice(index, 1);
+          this.debouncedSave();
+          this.display();
+        }));
+    
+    // Field key (name)
+    new Setting(fieldContainer)
+      .setName('Field Name')
+      .setDesc('The frontmatter key name (must be valid YAML key)')
+      .addText(text => text
+        .setPlaceholder('field_name')
+        .setValue(field.key)
+        .onChange((v) => {
+          const validatedKey = this.validateFrontmatterFieldName(v.trim());
+          field.key = validatedKey;
+          this.debouncedSave();
+          
+          // Show validation feedback if key was changed
+          if (validatedKey !== v.trim()) {
+            this.showValidationFeedback(text.inputEl, 'Invalid field name. Must start with letter/underscore and contain only letters, numbers, underscores, hyphens, and dots.');
+            text.setValue(validatedKey);
+          }
+        }));
+    
+    // Field type
+    new Setting(fieldContainer)
+      .setName('Field Type')
+      .setDesc('The data type for this field')
+      .addDropdown(dropdown => dropdown
+        .addOption('text', 'Text')
+        .addOption('date', 'Date')
+        .addOption('select', 'Select (dropdown)')
+        .addOption('boolean', 'Boolean (true/false)')
+        .setValue(field.type)
+        .onChange((v) => {
+          field.type = v as 'text' | 'date' | 'select' | 'boolean';
+          this.debouncedSave();
+          this.display(); // Refresh to show/hide options field
+        }));
+    
+    // Default value
+    new Setting(fieldContainer)
+      .setName('Default Value')
+      .setDesc('Default value for this field (use {{date}} for current date)')
+      .addText(text => text
+        .setPlaceholder(this.getDefaultValuePlaceholder(field.type))
+        .setValue(field.defaultValue)
+        .onChange((v) => {
+          field.defaultValue = v;
+          this.debouncedSave();
+        }));
+    
+    // Options for select type
+    if (field.type === 'select') {
+      new Setting(fieldContainer)
+        .setName('Select Options')
+        .setDesc('Comma-separated list of options for the dropdown')
+        .addText(text => text
+          .setPlaceholder('option1, option2, option3')
+          .setValue(field.options ? field.options.join(', ') : '')
+          .onChange((v) => {
+            field.options = v.split(',')
+              .map(s => s.trim())
+              .filter(s => s.length > 0);
+            this.debouncedSave();
+          }));
+    }
+    
+    // Required toggle
+    new Setting(fieldContainer)
+      .setName('Required Field')
+      .setDesc('Whether this field must have a value')
+      .addToggle(toggle => toggle
+        .setValue(field.required)
+        .onChange((v) => {
+          field.required = v;
+          this.debouncedSave();
+        }));
+    
+    // Add visual separation between fields
+    fieldContainer.style.marginBottom = '20px';
+    fieldContainer.style.padding = '16px';
+    fieldContainer.style.backgroundColor = 'var(--background-secondary)';
+    fieldContainer.style.borderRadius = '8px';
+    fieldContainer.style.border = '1px solid var(--background-modifier-border)';
+  }
+
+  /**
+   * Validates frontmatter field name according to YAML key format
+   */
+  private validateFrontmatterFieldName(fieldName: string): string {
+    // Check if empty
+    if (!fieldName || fieldName.length === 0) {
+      return 'field';
+    }
+
+    // YAML key validation: must start with letter or underscore, 
+    // can contain letters, numbers, underscores, hyphens, and dots
+    const yamlKeyPattern = /^[a-zA-Z_][a-zA-Z0-9_.-]*$/;
+    
+    if (!yamlKeyPattern.test(fieldName)) {
+      return 'field';
+    }
+
+    // Additional checks for problematic characters
+    if (fieldName.includes('..') || fieldName.startsWith('.') || fieldName.endsWith('.')) {
+      return 'field';
+    }
+
+    return fieldName;
+  }
+
+  /**
+   * Gets appropriate placeholder text for default value based on field type
+   */
+  private getDefaultValuePlaceholder(type: string): string {
+    switch (type) {
+      case 'text':
+        return 'Enter default text...';
+      case 'date':
+        return '{{date}} or YYYY-MM-DD';
+      case 'select':
+        return 'Choose from options above';
+      case 'boolean':
+        return 'true or false';
+      default:
+        return 'Enter default value...';
+    }
   }
   
   private addDebugSection(containerEl: HTMLElement): void {
