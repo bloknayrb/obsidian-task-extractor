@@ -1,120 +1,111 @@
-# Task Extractor v2.2.2 - Manual Task Extraction Command
+## 🚀 Task Extractor v2.3.0 - Enhanced Prompt Engineering
 
-## 🚀 Major New Feature: Manual Task Extraction
-
-This release introduces a powerful new manual task extraction command that gives users complete control over when and how task extraction occurs.
+This release delivers a completely rewritten task extraction prompt based on research into prompt engineering best practices, significantly improving accuracy and reliability.
 
 ### ✨ What's New
 
-#### Manual Task Extraction Command
-- **New Command**: "Extract tasks from current note" available in the command palette
-- **Hotkey Support**: Assign custom keyboard shortcuts for instant task extraction
-- **Universal Processing**: Works on any note regardless of frontmatter type
-- **Smart Validation**: Comprehensive error handling and user feedback
-- **Real-time Feedback**: Progress notices and result notifications
+#### Advanced Prompt Engineering
+- **Multi-stage Analysis Framework**: Systematic 3-step process (Context Analysis → Task Identification → Information Extraction)
+- **Chain-of-thought Reasoning**: Built-in validation checkpoints and quality assurance steps
+- **Conservative Extraction**: "Accuracy over completeness" principle with confidence scoring
+- **Hallucination Prevention**: Strong validation rules and explicit null handling for uncertain information
 
-#### Enhanced User Experience
-- **Start Processing Notice**: "Extracting tasks from current note..." shown when processing begins
-- **Success Notifications**: Clear feedback showing exact number of tasks created
-- **Error Handling**: Informative messages for common issues (no file, non-markdown, missing config)
-- **No Tasks Found**: Friendly notification when no actionable tasks are detected
+#### Enhanced Task Detection
+- **Improved Accuracy**: Research-backed techniques reduce false positives and improve task quality
+- **Better Context Understanding**: Enhanced document type identification and project/client mapping
+- **Confidence Assessment**: Three-tier confidence scoring (high/medium/low) with extraction thresholds
+- **Professional Output**: Cleaner, more actionable task titles and descriptions
+
+#### Metadata Integration Improvements
+- **TaskNotes Compatibility**: Enhanced frontmatter integration aligned with TaskNotes repository patterns
+- **Better Field Extraction**: Improved project/client detection with explicit null handling
+- **Quality Standards**: Specific action verbs, measurable outcomes, and feasibility checks
+- **Structured Output**: Detailed JSON schema with field specifications and format examples
 
 ### 🔧 Technical Improvements
 
-#### Robust Command Implementation
-- **Validation Chain**: Null file checks, markdown validation, and configuration verification
-- **Error Recovery**: Graceful handling of edge cases and invalid states
-- **Test Coverage**: 7 new comprehensive test cases for manual command functionality
-- **Performance**: Optimized processing flow with minimal overhead
+#### Prompt Architecture
+- **Structured Design**: Clear role definition with hierarchical instruction organization
+- **Quality Standards**: Explicit filtering criteria and mandatory exclusions
+- **Validation Rules**: Built-in checkpoints to ensure extraction quality
+- **Conservative Approach**: Extract only with medium or high confidence
 
-#### Code Quality Enhancements
-- **Type Safety**: Enhanced TypeScript definitions and error handling
-- **Documentation**: Updated README with manual extraction usage examples
-- **Testing**: Total of 84 tests passing (100% success rate)
-- **Specifications**: Complete requirements and design documentation
+#### Better Reliability
+- **Reduced False Positives**: Strict criteria for actionable tasks with specific exclusions
+- **Enhanced Validation**: Multiple validation steps before finalizing extractions
+- **Improved Consistency**: Standardized output format with detailed specifications
+- **Error Prevention**: Robust handling of edge cases and ambiguous content
 
-### 📋 Usage
+### 📈 User Experience Enhancements
 
-#### Command Palette
-1. Open command palette (`Ctrl+P` or `Cmd+P`)
-2. Type "Extract tasks from current note"
-3. Press Enter to run task extraction on active note
+#### More Reliable Extractions
+- **Higher Quality Tasks**: Only extract clearly actionable items with specific outcomes
+- **Better Context Preservation**: Enhanced source excerpts and justification tracking
+- **Improved Metadata**: More accurate priority assignment and due date extraction
+- **Professional Language**: Cleaner, action-oriented task titles using active verbs
 
-#### Custom Hotkey (Recommended)
-1. Go to Settings → Hotkeys
-2. Search for "Extract tasks from current note"
-3. Assign your preferred key combination
-4. Use hotkey anytime to extract tasks from active note
+#### Enhanced Documentation
+- **Updated README**: New section highlighting enhanced prompt features
+- **Configuration Guide**: Updated custom prompt documentation with examples
+- **Reset Functionality**: Enhanced default prompt with improved substitution
 
-### 🛠 How It Works
+### 🏗️ Architecture
 
-The manual command bypasses all frontmatter-based filtering and processes any markdown note:
+This release maintains full backward compatibility while delivering significant improvements:
 
-1. **Validates** current file (exists, is markdown, settings configured)
-2. **Analyzes** note content using configured LLM provider
-3. **Extracts** actionable tasks with proper context
-4. **Creates** task notes with full frontmatter and source links
-5. **Notifies** user of results with detailed feedback
+- **Existing Configurations**: All current settings and customizations continue to work unchanged
+- **API Compatibility**: No breaking changes to existing integrations
+- **Performance**: Enhanced prompt delivers better results without performance impact
+- **Extensibility**: Improved foundation for future prompt engineering enhancements
 
-### 🔄 Integration with Existing Features
+### 🎯 Research-Backed Improvements
 
-- **LLM Provider Support**: Works with OpenAI, Anthropic, Ollama, and LM Studio
-- **Settings Compatibility**: Respects all existing plugin configurations
-- **Frontmatter Templates**: Uses configured frontmatter fields and types
-- **File Exclusions**: Honors exclusion patterns (if enabled in settings)
-- **Debug Logging**: Full logging support for troubleshooting
+Based on comprehensive research into prompt engineering best practices:
 
-### 🧪 Quality Assurance
+- **Multi-provider Analysis**: Studied OpenAI, Anthropic, and academic prompt engineering guidelines
+- **TaskNotes Integration**: Analyzed successful task management frontmatter patterns
+- **Hallucination Prevention**: Implemented techniques from constitutional AI research
+- **Structured Extraction**: Applied systematic approaches for reliable information extraction
 
-- **84 Tests Passing**: Comprehensive test suite including new manual command tests
-- **Security Validated**: No vulnerabilities in dependencies (`npm audit` clean)
-- **Cross-Platform**: Tested on Windows, macOS, and Linux
-- **Performance**: Minimal impact on Obsidian startup and operation
+### 🔄 Migration
 
-### 📚 Documentation Updates
+**No action required** - this update is fully backward compatible:
 
-- **README**: Added manual extraction section with examples
-- **Requirements**: Complete specification with acceptance criteria
-- **Design Document**: Detailed technical implementation guide
-- **Release Notes**: Comprehensive change documentation
-
-### 🔧 For Developers
-
-#### New API Methods
-- `executeManualTaskExtraction()`: Main command handler
-- `processFileManually()`: Core manual processing logic
-- Enhanced error handling and validation chains
-
-#### Test Coverage
-- Manual command notice validation
-- Error state handling
-- User feedback verification
-- Integration test improvements
+- Existing custom prompts continue to work unchanged
+- Default prompt automatically uses enhanced version
+- Reset functionality updates to new enhanced default
+- All settings and configurations preserved
 
 ---
 
-## Installation
+### 📋 Full Changelog
 
-Download from the Obsidian Community Plugins directory or install manually:
+**New Features:**
+- Complete rewrite of default task extraction prompt using research-backed best practices
+- Multi-stage analysis framework with systematic validation checkpoints
+- Enhanced metadata extraction aligned with TaskNotes repository patterns
+- Conservative extraction principles with confidence scoring and hallucination prevention
 
-1. Download `main.js`, `manifest.json`, and `styles.css`
-2. Place in `.obsidian/plugins/task-extractor/`
-3. Enable plugin in Obsidian settings
+**Technical Improvements:**
+- Structured prompt architecture with clear role definition and hierarchical instructions
+- Quality standards with explicit filtering criteria and mandatory exclusions
+- Three-tier confidence assessment with extraction thresholds
+- Detailed JSON schema with field specifications and format examples
 
-## Support
+**Documentation:**
+- Updated README with enhanced prompt features section
+- Improved custom prompt configuration guide
+- Enhanced reset functionality documentation
+- Added technical architecture details
 
-- **Issues**: [GitHub Issues](https://github.com/bloknayrb/obsidian-task-extractor/issues)
-- **Documentation**: See README.md for complete usage guide
-- **Requirements**: Obsidian 0.13.0+ required
+### 🙏 Acknowledgments
 
-## What's Next
-
-Future releases will focus on:
-- Enhanced LLM model support
-- Additional frontmatter customization options
-- Performance optimizations
-- UI/UX improvements
+This release incorporates research from:
+- OpenAI Prompt Engineering Guide (2024)
+- Anthropic Claude Prompt Engineering Documentation
+- Constitutional AI research papers
+- TaskNotes repository frontmatter patterns
 
 ---
 
-**Full Changelog**: https://github.com/bloknayrb/obsidian-task-extractor/compare/v2.2.1...v2.2.2
+**Previous Release**: [v2.2.0 - File/Folder Exclusion System](https://github.com/bloknayrb/obsidian-task-extractor/releases/tag/v2.2.0)
