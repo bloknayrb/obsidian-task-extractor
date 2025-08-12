@@ -3,7 +3,7 @@
  */
 
 import { App, TFile, Notice } from 'obsidian';
-import { ExtractorSettings, TaskExtraction, TaskExtractionResult, ExtractedTask } from './types';
+import { ExtractorSettings, TaskExtraction, TaskExtractionResult, ExtractedTask, DEFAULT_EXTRACTION_PROMPT } from './types';
 import { LLMProviderManager } from './llm-providers';
 import { DebugLogger } from './debug-logger';
 
@@ -441,28 +441,9 @@ export class TaskProcessor {
 
   // Shared method for constructing prompts
   private buildExtractionPrompt(sourcePath: string, content: string): { system: string, user: string } {
-    // Use custom prompt if provided, otherwise use enhanced default
+    // Use custom prompt if provided, otherwise use default prompt constant
     const basePrompt = this.settings.customPrompt || 
-      `You are a task extraction specialist. Extract actionable tasks from emails and meeting notes following these strict rules:
-
-EXTRACTION RULES:
-- Extract ONLY concrete, actionable tasks explicitly stated or clearly implied
-- Use null for uncertain/missing information - DO NOT GUESS
-- Extract tasks only for the specified person: ${this.settings.ownerName} (exact name)
-- If no clear tasks exist, return {"found": false, "tasks": []}
-
-PRIORITY GUIDELINES:
-- high: explicit urgency/deadline mentioned
-- medium: standard requests without time pressure  
-- low: optional/background items
-
-VALIDATION CONSTRAINTS:
-- task_title: 6-100 characters, actionable phrasing
-- task_details: max 300 characters, concrete description
-- due_date: YYYY-MM-DD format only if explicitly mentioned
-- source_excerpt: exact quote (max 150 chars) justifying extraction
-
-Return valid JSON only. Be conservative - accuracy over completeness.`;
+      DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', this.settings.ownerName);
     
     // Generate field descriptions from frontmatter settings
     const fieldDescriptions = this.settings.frontmatterFields
@@ -1098,6 +1079,13 @@ When no tasks found, return: {"found": false, "tasks": []}`;
     
     // Clear processing files set
     this.processingFiles.clear();
+  }
+
+  // Manual processing method (placeholder - to be implemented in task 3)
+  async processFileManually(file: TFile): Promise<void> {
+    // TODO: Implement manual processing logic in task 3
+    // This is a placeholder to make the build pass for task 2
+    throw new Error('Manual processing not yet implemented - will be added in task 3');
   }
 
   // Methods for backward compatibility

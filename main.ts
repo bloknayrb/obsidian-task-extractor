@@ -10,7 +10,7 @@ Features:
 - Robust error handling and fallback strategies
 */
 
-import { App, Plugin, TFile } from 'obsidian';
+import { App, Plugin, TFile, Notice } from 'obsidian';
 import { ExtractorSettings, DEFAULT_SETTINGS, LLMService, validateSettings } from './src/types';
 import { LLMProviderManager } from './src/llm-providers';
 import { TaskProcessor } from './src/task-processor';
@@ -63,6 +63,15 @@ export default class TaskExtractorPlugin extends Plugin {
 
     // Register settings tab
     this.addSettingTab(new ExtractorSettingTab(this.app, this, this.settings, this.llmProvider));
+
+    // Register manual task extraction command
+    this.addCommand({
+      id: 'task-extractor:extract-current-note',
+      name: 'Extract tasks from current note',
+      callback: () => {
+        this.executeManualTaskExtraction();
+      }
+    });
 
     // Hook into metadata changes (file created/updated)
     this.registerEvent(
@@ -165,6 +174,28 @@ export default class TaskExtractorPlugin extends Plugin {
 
   getDefaultModels(provider: string): string[] {
     return this.llmProvider.getDefaultModels(provider);
+  }
+
+  // Manual task extraction command handler
+  private async executeManualTaskExtraction() {
+    const activeFile = this.app.workspace.getActiveFile();
+    
+    if (!activeFile) {
+      new Notice('No active note to process');
+      return;
+    }
+    
+    if (activeFile.extension !== 'md') {
+      new Notice('Active file is not a markdown note');
+      return;
+    }
+    
+    try {
+      await this.taskProcessor.processFileManually(activeFile);
+    } catch (error) {
+      console.error('Manual task extraction error:', error);
+      new Notice('Error extracting tasks - see console');
+    }
   }
 }
 

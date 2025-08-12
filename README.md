@@ -15,6 +15,7 @@ An Obsidian plugin that extracts actionable tasks from notes using Large Languag
 - Task extraction for specific individuals
 - Configurable note types and trigger conditions
 - Duplicate prevention system
+- **Manual task extraction** command for on-demand processing
 - **File/folder exclusion** with flexible patterns
 
 ### Customizable Frontmatter
@@ -251,7 +252,40 @@ Look for tasks specifically assigned to [Owner Name].
 Focus on [specific criteria]...
 ```
 
-Leave empty to use the default prompt.
+**Configuration**:
+1. Go to **Settings → Task Note Frontmatter**
+2. Enter your custom prompt in the **Custom Prompt** text area
+3. Use **Reset to Default** button to restore the original prompt
+4. Leave empty to use the built-in default prompt
+
+**Reset Functionality**: The reset button automatically substitutes your configured owner name into the default prompt and refreshes the UI immediately.
+
+## Usage
+
+### Manual Task Extraction
+
+You can manually extract tasks from any note using the command palette:
+
+1. Open the note you want to process
+2. Open Command Palette (Ctrl/Cmd + P)
+3. Search for "Extract tasks from current note"
+4. Press Enter to execute
+
+**Features**:
+- Works on any markdown note (ignores frontmatter trigger types)
+- Processes the currently active note immediately
+- Provides user feedback through notifications
+- Handles errors gracefully with console logging
+
+**Use Cases**:
+- Process notes that don't match your trigger types
+- Extract tasks from imported or legacy notes
+- Test task extraction on specific content
+- Override automatic processing rules
+
+### Automatic Processing
+
+Notes are automatically processed when they match your configured trigger types and frontmatter settings. See the Configuration section for details on setting up automatic processing.
 
 ## Usage Examples
 
