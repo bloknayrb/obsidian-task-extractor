@@ -1081,11 +1081,130 @@ When no tasks found, return: {"found": false, "tasks": []}`;
     this.processingFiles.clear();
   }
 
-  // Manual processing method (placeholder - to be implemented in task 3)
+  /**
+   * Manual processing method that bypasses frontmatter type filtering and duplicate prevention
+   * Requirements: 1.1, 3.1, 3.2, 5.1, 5.2, 5.3
+   */
   async processFileManually(file: TFile): Promise<void> {
-    // TODO: Implement manual processing logic in task 3
-    // This is a placeholder to make the build pass for task 2
-    throw new Error('Manual processing not yet implemented - will be added in task 3');
+    // File validation - check if file exists first before accessing properties
+    if (!file) {
+      const message = 'No active note to process';
+      new Notice(`Task Extractor: ${message}`);
+      this.log('warn', 'validation', message, { file: null });
+      return;
+    }
+
+    const correlationId = this.startOperation('file-processing', 'Manual processing file', { 
+      filePath: file.path 
+    });
+
+    try {
+
+      if (file.extension !== 'md') {
+        const message = 'Active file is not a markdown note';
+        new Notice(`Task Extractor: ${message}`);
+        this.log('warn', 'validation', message, { 
+          filePath: file.path, 
+          extension: file.extension 
+        }, correlationId);
+        return;
+      }
+
+      this.log('info', 'file-processing', 'Manual processing started', { 
+        filePath: file.path 
+      }, correlationId);
+
+      // Show processing notice
+      new Notice('Extracting tasks from current note...');
+
+      // Validate owner name is configured
+      if (!this.settings.ownerName || this.settings.ownerName.trim().length === 0) {
+        const message = 'Owner name not configured in plugin settings';
+        console.warn('TaskExtractor: Owner name not configured, skipping processing');
+        new Notice(`Task Extractor: ${message}`);
+        this.log('error', 'validation', 'Owner name not configured', { 
+          filePath: file.path,
+          ownerName: this.settings.ownerName
+        }, correlationId);
+        return;
+      }
+
+      // Read file content (bypass frontmatter type filtering)
+      const content = await this.app.vault.read(file);
+      this.log('info', 'file-processing', 'File content read for manual processing', { 
+        filePath: file.path,
+        contentLength: content.length
+      }, correlationId);
+
+      // Use existing extractMultipleTasksFromContent method for LLM processing
+      const extraction = await this.extractMultipleTasksFromContent(content, file.path, correlationId);
+
+      if (extraction && extraction.found && extraction.tasks && extraction.tasks.length > 0) {
+        this.log('info', 'file-processing', 'Tasks found in manual processing', { 
+          filePath: file.path,
+          tasksFound: extraction.tasks.length
+        }, correlationId);
+
+        // Create task notes for each extracted task
+        let createdCount = 0;
+        for (const task of extraction.tasks) {
+          try {
+            await this.createTaskNote(task, file, correlationId);
+            createdCount++;
+          } catch (error) {
+            console.error(`Failed to create task note for: ${task.task_title}`, error);
+            this.log('error', 'task-creation', 'Failed to create individual task note in manual processing', { 
+              filePath: file.path,
+              taskTitle: task.task_title,
+              error: error instanceof Error ? error.message : String(error)
+            }, correlationId);
+          }
+        }
+
+        // Show success notice
+        if (createdCount > 0) {
+          const message = `Created ${createdCount} task note${createdCount !== 1 ? 's' : ''}`;
+          new Notice(`Task Extractor: ${message}`);
+          this.log('info', 'file-processing', 'Manual processing completed successfully', { 
+            filePath: file.path,
+            totalTasks: extraction.tasks.length,
+            createdCount,
+            failedCount: extraction.tasks.length - createdCount
+          }, correlationId);
+        } else {
+          const message = 'Failed to create any task notes - see console for details';
+          new Notice(`Task Extractor: ${message}`);
+          this.log('error', 'file-processing', 'Manual processing failed to create any tasks', { 
+            filePath: file.path,
+            totalTasks: extraction.tasks.length
+          }, correlationId);
+        }
+      } else {
+        // No tasks found
+        const message = 'No tasks found in current note';
+        new Notice(`Task Extractor: ${message}`);
+        this.log('info', 'file-processing', 'No tasks found in manual processing', { 
+          filePath: file.path
+        }, correlationId);
+      }
+
+      // Note: Bypass duplicate prevention logic - do NOT mark file as processed
+      // This allows manual command to always create new tasks regardless of previous processing
+      this.log('info', 'file-processing', 'Manual processing completed - file not marked as processed', { 
+        filePath: file.path
+      }, correlationId);
+
+    } catch (error) {
+      console.error('TaskExtractor manual processing error:', error);
+      const message = 'Error extracting tasks - see console for details';
+      new Notice(`Task Extractor: ${message}`);
+      
+      this.log('error', 'error', 'Manual processing failed with error', { 
+        filePath: file.path,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      }, correlationId);
+    }
   }
 
   // Methods for backward compatibility

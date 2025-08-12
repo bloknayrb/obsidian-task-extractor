@@ -13,7 +13,7 @@
   - Create command callback that calls manual processing method
   - _Requirements: 1.1, 2.1, 2.2_
 
-- [ ] 3. Implement manual processing method in TaskProcessor
+- [x] 3. Implement manual processing method in TaskProcessor
   - Add processFileManually(file: TFile) method to TaskProcessor class
   - Implement file validation (markdown check, file exists)
   - Bypass frontmatter type filtering logic
@@ -21,7 +21,7 @@
   - Use existing extractMultipleTasksFromContent method for LLM processing
   - _Requirements: 1.1, 3.1, 3.2, 5.1, 5.2, 5.3_
 
-- [ ] 4. Add user feedback notices for manual command
+- [x] 4. Add user feedback notices for manual command
   - Add notice when command starts: "Extracting tasks from current note..."
   - Add success notice showing number of tasks created
   - Add notice when no tasks found: "No tasks found in current note"
