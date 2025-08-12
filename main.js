@@ -53,6 +53,9 @@ var DEFAULT_SETTINGS = {
   triggerTypes: ["email", "meetingnote", "meeting note", "meeting notes"],
   triggerFrontmatterField: "Type",
   // default to "Type" for backward compatibility
+  // Exclusion settings
+  excludedPaths: [],
+  excludedPatterns: [],
   // Customizable frontmatter
   frontmatterFields: DEFAULT_FRONTMATTER_FIELDS,
   customPrompt: "",
@@ -71,18 +74,24 @@ function validateSettings(settings, debugLogger) {
   if (settings.provider && ["openai", "anthropic", "ollama", "lmstudio"].includes(settings.provider)) {
     validated.provider = settings.provider;
   }
-  if (typeof settings.apiKey === "string") validated.apiKey = settings.apiKey;
-  if (typeof settings.model === "string") validated.model = settings.model;
-  if (typeof settings.ollamaUrl === "string") validated.ollamaUrl = settings.ollamaUrl;
-  if (typeof settings.lmstudioUrl === "string") validated.lmstudioUrl = settings.lmstudioUrl;
-  if (typeof settings.anthropicUrl === "string") validated.anthropicUrl = settings.anthropicUrl;
+  if (typeof settings.apiKey === "string")
+    validated.apiKey = settings.apiKey;
+  if (typeof settings.model === "string")
+    validated.model = settings.model;
+  if (typeof settings.ollamaUrl === "string")
+    validated.ollamaUrl = settings.ollamaUrl;
+  if (typeof settings.lmstudioUrl === "string")
+    validated.lmstudioUrl = settings.lmstudioUrl;
+  if (typeof settings.anthropicUrl === "string")
+    validated.anthropicUrl = settings.anthropicUrl;
   if (typeof settings.tasksFolder === "string" && settings.tasksFolder.trim()) {
     validated.tasksFolder = settings.tasksFolder.trim();
   }
   if (typeof settings.ownerName === "string" && settings.ownerName.trim()) {
     validated.ownerName = settings.ownerName.trim();
   }
-  if (typeof settings.customPrompt === "string") validated.customPrompt = settings.customPrompt;
+  if (typeof settings.customPrompt === "string")
+    validated.customPrompt = settings.customPrompt;
   if (typeof settings.processedFrontmatterKey === "string") {
     const key = settings.processedFrontmatterKey.trim();
     const parts = key.split(".");
@@ -99,8 +108,10 @@ function validateSettings(settings, debugLogger) {
       validated.triggerFrontmatterField = field;
     }
   }
-  if (typeof settings.linkBack === "boolean") validated.linkBack = settings.linkBack;
-  if (typeof settings.processOnUpdate === "boolean") validated.processOnUpdate = settings.processOnUpdate;
+  if (typeof settings.linkBack === "boolean")
+    validated.linkBack = settings.linkBack;
+  if (typeof settings.processOnUpdate === "boolean")
+    validated.processOnUpdate = settings.processOnUpdate;
   if (Array.isArray(settings.triggerTypes)) {
     const validTypes = settings.triggerTypes.filter((t) => typeof t === "string" && t.trim().length > 0).map((t) => t.trim());
     if (validTypes.length > 0) {
@@ -114,6 +125,18 @@ function validateSettings(settings, debugLogger) {
     if (validFields.length > 0) {
       validated.frontmatterFields = validFields;
     }
+  }
+  if (Array.isArray(settings.excludedPaths)) {
+    const validPaths = settings.excludedPaths.filter((p) => typeof p === "string" && p.trim().length > 0).map((p) => p.trim()).filter((p) => {
+      return p.length > 0 && p.length < 500;
+    });
+    validated.excludedPaths = validPaths;
+  }
+  if (Array.isArray(settings.excludedPatterns)) {
+    const validPatterns = settings.excludedPatterns.filter((p) => typeof p === "string" && p.trim().length > 0).map((p) => p.trim()).filter((p) => {
+      return p.length > 0 && p.length < 500 && !/[<>:"|?]/.test(p);
+    });
+    validated.excludedPatterns = validPatterns;
   }
   if (typeof settings.localModelRefreshInterval === "number" && !isNaN(settings.localModelRefreshInterval)) {
     validated.localModelRefreshInterval = Math.max(1, Math.min(60, settings.localModelRefreshInterval));
@@ -426,7 +449,8 @@ var LLMProviderManager = class {
       primaryProvider: this.settings.provider
     }, correlationId);
     for (const service of availableServices) {
-      if (service.name === this.settings.provider) continue;
+      if (service.name === this.settings.provider)
+        continue;
       try {
         console.log(`Trying fallback to ${service.name}`);
         (_b = this.debugLogger) == null ? void 0 : _b.log("info", "llm-call", `Attempting fallback to ${service.name}`, {
@@ -1124,6 +1148,14 @@ var TaskProcessor = class {
     const correlationId = this.startOperation("file-processing", "Processing file", {
       filePath: file.path
     });
+    if (this.isFileExcluded(file.path)) {
+      this.log("info", "file-processing", "File skipped: excluded by user rules", {
+        filePath: file.path,
+        excludedPaths: this.settings.excludedPaths,
+        excludedPatterns: this.settings.excludedPatterns
+      }, correlationId);
+      return;
+    }
     const queueStatus = this.processingQueue.get(file.path);
     if ((queueStatus == null ? void 0 : queueStatus.status) === "processing" || this.processingFiles.has(file.path)) {
       this.log("info", "file-processing", "File skipped: already being processed", {
@@ -1290,9 +1322,13 @@ var TaskProcessor = class {
     const files = this.app.vault.getMarkdownFiles();
     const unprocessedFiles = [];
     for (const f of files) {
+      if (this.isFileExcluded(f.path)) {
+        continue;
+      }
       const cache = this.app.metadataCache.getFileCache(f);
       const front = cache == null ? void 0 : cache.frontmatter;
-      if (!front) continue;
+      if (!front)
+        continue;
       const frontmatterField = this.validateFrontmatterField(this.settings.triggerFrontmatterField);
       const typeRaw = this.getFrontmatterValue(front, frontmatterField) || "";
       const type = ("" + typeRaw).toLowerCase();
@@ -1317,12 +1353,14 @@ var TaskProcessor = class {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
   getFrontmatterValue(front, key) {
-    if (!front) return void 0;
+    if (!front)
+      return void 0;
     if (key.includes(".")) {
       const parts = key.split(".");
       let cur = front;
       for (const p of parts) {
-        if (!cur) return void 0;
+        if (!cur)
+          return void 0;
         cur = cur[p];
       }
       return cur;
@@ -1425,12 +1463,18 @@ VALIDATION CONSTRAINTS:
 Return valid JSON only. Be conservative - accuracy over completeness.`;
     const fieldDescriptions = this.settings.frontmatterFields.filter((f) => f.required || f.key === "task_title" || f.key === "task_details").map((f) => {
       var _a;
-      if (f.key === "task" || f.key === "task_title") return "- task_title: short (6-100 words) actionable title";
-      if (f.key === "task_details") return "- task_details: 1-3 sentences describing what to do and any context";
-      if (f.key === "due") return "- due_date: ISO date YYYY-MM-DD if explicitly present in the text, otherwise null";
-      if (f.key === "priority") return `- priority: ${((_a = f.options) == null ? void 0 : _a.join("|")) || "high|medium|low"} (choose best match)`;
-      if (f.key === "project") return "- project: project name if mentioned, otherwise null";
-      if (f.key === "client") return "- client: client name if mentioned, otherwise null";
+      if (f.key === "task" || f.key === "task_title")
+        return "- task_title: short (6-100 words) actionable title";
+      if (f.key === "task_details")
+        return "- task_details: 1-3 sentences describing what to do and any context";
+      if (f.key === "due")
+        return "- due_date: ISO date YYYY-MM-DD if explicitly present in the text, otherwise null";
+      if (f.key === "priority")
+        return `- priority: ${((_a = f.options) == null ? void 0 : _a.join("|")) || "high|medium|low"} (choose best match)`;
+      if (f.key === "project")
+        return "- project: project name if mentioned, otherwise null";
+      if (f.key === "client")
+        return "- client: client name if mentioned, otherwise null";
       return `- ${f.key}: ${f.defaultValue || "appropriate value based on context"}`;
     });
     const system = `${basePrompt}
@@ -1612,7 +1656,8 @@ ${content}
           return { found: false };
         }
       }
-      if (!parsed.found) return { found: false };
+      if (!parsed.found)
+        return { found: false };
       return {
         found: true,
         task_title: parsed.task_title || parsed.title || "Unspecified task",
@@ -1634,7 +1679,8 @@ ${content}
     }
   }
   safeParseJSON(text) {
-    if (!text) return null;
+    if (!text)
+      return null;
     let parsed = null;
     try {
       parsed = JSON.parse(text);
@@ -1655,7 +1701,8 @@ ${content}
         return null;
       }
     }
-    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed || typeof parsed !== "object")
+      return null;
     return this.validateAndNormalizeParsedResult(parsed);
   }
   validateAndNormalizeParsedResult(data) {
@@ -1722,7 +1769,8 @@ ${content}
     return null;
   }
   isValidTask(task) {
-    if (typeof task !== "object" || !task) return false;
+    if (typeof task !== "object" || !task)
+      return false;
     if (!task.task_title || typeof task.task_title !== "string" || task.task_title.trim().length === 0) {
       return false;
     }
@@ -1768,7 +1816,7 @@ ${content}
     for (const field of this.settings.frontmatterFields) {
       let value = extraction[field.key] || extraction[field.key.replace("_", "")] || field.defaultValue;
       if (value === "{{date}}") {
-        value = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        value = new Date().toISOString().split("T")[0];
       }
       if (field.key === "task" && !value && extraction.task_title) {
         value = extraction.task_title;
@@ -1818,6 +1866,61 @@ ${content}
   }
   makeFilenameSafe(title) {
     return title.replace(/[\\/:*?"<>|#%{}\\^~\[\]`;'@&=+]/g, "").replace(/\s+/g, "-").slice(0, 120);
+  }
+  /**
+   * Checks if a file path is excluded based on exact path matches
+   */
+  isPathExcluded(filePath) {
+    if (!this.settings.excludedPaths || this.settings.excludedPaths.length === 0) {
+      return false;
+    }
+    const normalizedPath = filePath.replace(/\\/g, "/");
+    return this.settings.excludedPaths.some((excludedPath) => {
+      const normalizedExcluded = excludedPath.replace(/\\/g, "/");
+      if (normalizedExcluded.endsWith("/")) {
+        return normalizedPath.startsWith(normalizedExcluded) || normalizedPath.startsWith(normalizedExcluded.slice(0, -1) + "/");
+      }
+      return normalizedPath === normalizedExcluded;
+    });
+  }
+  /**
+   * Checks if a file path matches any exclusion patterns (glob-style)
+   */
+  matchesExclusionPattern(filePath) {
+    if (!this.settings.excludedPatterns || this.settings.excludedPatterns.length === 0) {
+      return false;
+    }
+    const normalizedPath = filePath.replace(/\\/g, "/");
+    return this.settings.excludedPatterns.some((pattern) => {
+      const normalizedPattern = pattern.replace(/\\/g, "/");
+      const regexPattern = this.globToRegex(normalizedPattern);
+      try {
+        return new RegExp(regexPattern, "i").test(normalizedPath);
+      } catch (error) {
+        console.warn(`TaskExtractor: Invalid exclusion pattern: ${pattern}`);
+        return false;
+      }
+    });
+  }
+  /**
+   * Converts a glob pattern to a regex pattern
+   */
+  globToRegex(pattern) {
+    let regexPattern = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    regexPattern = regexPattern.replace(/\*\*/g, "\xA7DOUBLESTAR\xA7").replace(/\*/g, "[^/]*").replace(/§DOUBLESTAR§/g, ".*").replace(/\?/g, "[^/]");
+    if (!regexPattern.startsWith("^")) {
+      regexPattern = "^" + regexPattern;
+    }
+    if (!regexPattern.endsWith("$")) {
+      regexPattern = regexPattern + "$";
+    }
+    return regexPattern;
+  }
+  /**
+   * Main exclusion check combining both path and pattern matching
+   */
+  isFileExcluded(filePath) {
+    return this.isPathExcluded(filePath) || this.matchesExclusionPattern(filePath);
   }
   /**
    * Validates frontmatter field name with graceful fallback to "Type"
@@ -1976,6 +2079,7 @@ var ExtractorSettingTab = class extends import_obsidian3.PluginSettingTab {
     this.addProviderSection(containerEl);
     this.addLocalLLMSection(containerEl);
     this.addProcessingSection(containerEl);
+    this.addExclusionSection(containerEl);
     this.addFrontmatterSection(containerEl);
     this.addDebugSection(containerEl);
     this.addAdvancedSection(containerEl);
@@ -2126,6 +2230,42 @@ var ExtractorSettingTab = class extends import_obsidian3.PluginSettingTab {
       this.settings.processedFrontmatterKey = v.trim();
       this.debouncedSave();
     }));
+  }
+  addExclusionSection(containerEl) {
+    var _a, _b, _c, _d, _e, _f, _g, _h;
+    containerEl.createEl("h3", { text: "File/Folder Exclusion Settings" });
+    containerEl.createEl("p", {
+      text: "Exclude specific files or folders from being processed by the task extractor.",
+      cls: "setting-item-description"
+    });
+    new import_obsidian3.Setting(containerEl).setName("Excluded Paths").setDesc('Comma-separated list of exact file or folder paths to exclude. Examples: "Templates/", "Archive/Old Notes/", "Private/secrets.md"').addTextArea((text) => text.setPlaceholder("Templates/, Archive/, Private/secrets.md").setValue(this.settings.excludedPaths.join(", ")).onChange((v) => {
+      this.settings.excludedPaths = v.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      this.debouncedSave();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Exclusion Patterns").setDesc('Comma-separated list of glob patterns to exclude files. Supports wildcards: * (any characters except /), ** (any characters including /), ? (single character). Examples: "*.template.md", "**/drafts/**", "Archive/**"').addTextArea((text) => text.setPlaceholder("*.template.md, **/drafts/**, Archive/**").setValue(this.settings.excludedPatterns.join(", ")).onChange((v) => {
+      this.settings.excludedPatterns = v.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      this.debouncedSave();
+    }));
+    const examplesEl = containerEl.createDiv({ cls: "task-extractor-examples" });
+    examplesEl.createEl("h4", { text: "Examples:" });
+    const examplesList = examplesEl.createEl("ul");
+    examplesList.createEl("li").createEl("strong").setText("Exact Paths: ");
+    (_a = examplesList.lastChild) == null ? void 0 : _a.createEl("code").setText('"Templates/"');
+    (_b = examplesList.lastChild) == null ? void 0 : _b.appendText(" - excludes entire Templates folder");
+    examplesList.createEl("li").createEl("strong").setText("File Extensions: ");
+    (_c = examplesList.lastChild) == null ? void 0 : _c.createEl("code").setText('"*.tmp"');
+    (_d = examplesList.lastChild) == null ? void 0 : _d.appendText(" - excludes all .tmp files");
+    examplesList.createEl("li").createEl("strong").setText("Nested Folders: ");
+    (_e = examplesList.lastChild) == null ? void 0 : _e.createEl("code").setText('"**/drafts/**"');
+    (_f = examplesList.lastChild) == null ? void 0 : _f.appendText(" - excludes any drafts folder and its contents");
+    examplesList.createEl("li").createEl("strong").setText("Mixed: ");
+    (_g = examplesList.lastChild) == null ? void 0 : _g.createEl("code").setText('"Archive/**, *.template.md, Private/"');
+    (_h = examplesList.lastChild) == null ? void 0 : _h.appendText(" - excludes Archive folder, template files, and Private folder");
+    examplesEl.style.marginTop = "16px";
+    examplesEl.style.padding = "12px";
+    examplesEl.style.backgroundColor = "var(--background-secondary)";
+    examplesEl.style.borderRadius = "8px";
+    examplesEl.style.fontSize = "0.9em";
   }
   addFrontmatterSection(containerEl) {
     containerEl.createEl("h3", { text: "Task Note Frontmatter" });
@@ -2398,7 +2538,7 @@ var DebugLogger = class {
     }
     const parts = [];
     parts.push("=== Obsidian Task Extractor Debug Logs ===\n");
-    parts.push(`Generated: ${(/* @__PURE__ */ new Date()).toISOString()}
+    parts.push(`Generated: ${new Date().toISOString()}
 `);
     parts.push(`Total Entries: ${this.logs.length}
 `);
