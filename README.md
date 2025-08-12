@@ -1,8 +1,8 @@
 # Obsidian Task Extractor
 
-An advanced Obsidian plugin that automatically extracts actionable tasks from email and meeting notes using AI/LLMs. Supports cloud-based and local LLM providers with extensive customization options.
+An Obsidian plugin that extracts actionable tasks from notes using Large Language Models (LLMs). Supports multiple LLM providers including cloud and local options.
 
-## ✨ Features
+## Features
 
 ### Multi-Provider LLM Support
 - **OpenAI** - GPT models via API
@@ -10,9 +10,9 @@ An advanced Obsidian plugin that automatically extracts actionable tasks from em
 - **Ollama** - Local LLM runner with auto-detection
 - **LM Studio** - Local LLM server with model management
 
-### Smart Task Detection
-- Automatically processes notes with specific frontmatter types
-- Intelligent task extraction for specific individuals
+### Task Detection
+- Processes notes with specific frontmatter types
+- Task extraction for specific individuals
 - Configurable note types and trigger conditions
 - Duplicate prevention system
 - **File/folder exclusion** with flexible patterns
@@ -23,19 +23,19 @@ An advanced Obsidian plugin that automatically extracts actionable tasks from em
 - Default values and validation
 - Support for dynamic values (e.g., current date)
 
-### Advanced Features
-- On-demand service detection for local LLMs (83% less CPU usage)
+### Additional Features
+- On-demand service detection for local LLMs
 - Automatic fallback between providers
-- Optimized retry logic with linear backoff
+- Retry logic with linear backoff
 - Custom prompt engineering
-- Comprehensive error handling
+- Error handling and recovery
 
-### Performance Optimizations
-- **60% faster startup** through modular architecture and lazy loading
-- **83% reduction in background CPU usage** by eliminating continuous polling
-- **40% decrease in memory usage** with efficient caching and cleanup
-- **50% improvement in file processing speed** via debouncing and batch operations
-- **Responsive UI** with debounced settings saves and non-blocking vault scans
+### Performance Features
+- Modular architecture with lazy loading
+- Reduced background CPU usage by eliminating continuous polling
+- Memory management with caching and cleanup
+- File processing optimization via debouncing and batch operations
+- Non-blocking UI with debounced settings
 
 ### Quality & Reliability Improvements (v2.0)
 - **Race Condition Prevention** - Atomic file processing with proper cleanup and timeout protection
@@ -46,7 +46,7 @@ An advanced Obsidian plugin that automatically extracts actionable tasks from em
 - **String Operation Optimization** - 20%+ performance improvement through precompiled regex patterns
 - **Structured Logging** - Comprehensive debugging with contextual information and performance timing
 
-## 🚀 Quick Start
+## Installation and Setup
 
 ### Installation
 
@@ -79,18 +79,18 @@ npm run dev
 4. Configure **Tasks Folder** location
 5. Customize **Trigger Note Types** as needed
 
-## 🔧 Configuration Guide
+## Configuration
 
 ### LLM Provider Setup
 
 #### OpenAI
 - Get API key from [OpenAI Platform](https://platform.openai.com)
-- Recommended model: `gpt-4o-mini` (cost-effective)
+- Default model: `gpt-4o-mini`
 - Add API key in plugin settings
 
 #### Anthropic
 - Get API key from [Anthropic Console](https://console.anthropic.com)
-- Recommended model: `claude-3-haiku-20240307` (fast and affordable)
+- Default model: `claude-3-haiku-20240307`
 - Add API key in plugin settings
 - **Optional**: Configure a custom Anthropic URL for proxies or special endpoints.
 
@@ -253,7 +253,7 @@ Focus on [specific criteria]...
 
 Leave empty to use the default prompt.
 
-## 📝 Usage Examples
+## Usage Examples
 
 ### Example 1: Email Processing
 ```yaml
@@ -328,7 +328,7 @@ Source: [[Meetings/Weekly Team Sync - 2025-08-08]]
 > Bryan: Update the documentation by end of week
 ```
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -356,7 +356,7 @@ Source: [[Meetings/Weekly Team Sync - 2025-08-08]]
 
 ### Debug Mode & Logging
 
-The plugin includes comprehensive logging and debugging capabilities for troubleshooting and monitoring:
+The plugin includes logging and debugging capabilities for troubleshooting:
 
 #### Enable Debug Mode
 1. Go to **Settings → Task Extractor → Debug Settings**
@@ -364,11 +364,11 @@ The plugin includes comprehensive logging and debugging capabilities for trouble
 3. Configure **Max Log Entries** (default: 1000)
 
 #### Debug Features
-- **Zero Performance Impact**: When disabled, logging has no performance overhead
-- **Correlation Tracking**: Related operations share correlation IDs for easy tracing
-- **Comprehensive Coverage**: Logs all major decision points and operations
-- **Memory Management**: Automatic log rotation to prevent memory issues
-- **Structured Data**: All logs include relevant contextual information
+- Conditional logging with minimal performance impact when disabled
+- Correlation tracking for related operations
+- Logging coverage for major decision points and operations
+- Automatic log rotation to manage memory usage
+- Structured logging with contextual information
 
 #### Log Categories
 - **file-processing**: File filtering, validation, and processing events
@@ -389,10 +389,10 @@ The plugin includes comprehensive logging and debugging capabilities for trouble
 - Use smaller/faster models for local inference
 - Adjust **Model Refresh Interval** to reduce background checks
 
-## 🏗️ Architecture
+## Architecture
 
-### Optimized Modular Design
-The plugin uses a modern modular architecture for better performance and maintainability:
+### Modular Design
+The plugin uses a modular architecture:
 
 - **main.ts** - Plugin orchestration and backward compatibility layer
 - **src/types.ts** - Shared type definitions and constants
@@ -409,7 +409,7 @@ The plugin uses a modern modular architecture for better performance and maintai
 ### Backward Compatibility
 All existing APIs are preserved exactly, ensuring zero breaking changes for users upgrading from previous versions.
 
-## 🔧 Development
+## Development
 
 ### Building from Source
 
@@ -465,11 +465,11 @@ const available = this.getAvailableServices();
 - **Prompt Templates**: Customize extraction prompts
 - **Post-processing**: Add custom task note formatting
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -477,147 +477,145 @@ MIT License - see [LICENSE](LICENSE) file for details.
 4. Add tests if applicable
 5. Submit a pull request
 
-## 📬 Support
+## Support
 
 - **Issues**: [GitHub Issues](https://github.com/bryanjkolb/obsidian-task-extractor/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/bryanjkolb/obsidian-task-extractor/discussions)
 - **Documentation**: This README and in-plugin help
 
-## 📈 Changelog
+## Changelog
 
 ### v2.2.0 - File/Folder Exclusion System (2025-08-12)
 
-#### 🎯 New Features
-- **File/Folder Exclusions**: Comprehensive exclusion system to prevent processing of specific files or folders
-- **Exact Path Matching**: Exclude files/folders by exact path (e.g., `"Templates/"`, `"Archive/Old Notes/"`)
-- **Glob Pattern Support**: Flexible wildcard patterns (`*.template.md`, `**/drafts/**`, `Archive/**`)
-- **Mixed Exclusions**: Combine exact paths and patterns for maximum flexibility
+#### New Features
+- File/folder exclusion system to prevent processing of specific files or folders
+- Exact path matching for file/folder exclusions (e.g., `"Templates/"`, `"Archive/Old Notes/"`)
+- Glob pattern support for wildcard patterns (`*.template.md`, `**/drafts/**`, `Archive/**`)
+- Combined exact paths and patterns for flexible exclusion rules
 
-#### 🔧 Technical Implementation  
-- **Cross-Platform Compatibility**: Normalized path separators work on Windows, Mac, and Linux
-- **Performance Optimized**: Exclusion checks happen early in processing pipeline to minimize overhead
-- **Pattern Matching**: Robust glob-to-regex conversion with proper escaping and anchoring
-- **Validation**: Input sanitization prevents invalid patterns and provides user feedback
+#### Technical Implementation  
+- Cross-platform compatibility with normalized path separators for Windows, Mac, and Linux
+- Early exclusion checks in processing pipeline to minimize overhead
+- Glob-to-regex conversion with proper escaping and anchoring
+- Input sanitization to prevent invalid patterns with user feedback
 
-#### 🎨 User Experience
-- **Intuitive Settings UI**: Clear examples and descriptions with visual styling
-- **Real-time Application**: Changes apply immediately without plugin restart
-- **Debug Logging**: Excluded files logged when debug mode enabled
-- **Backward Compatible**: Empty defaults ensure existing installations unaffected
+#### User Experience
+- Settings UI with examples and descriptions
+- Changes apply immediately without plugin restart
+- Debug logging for excluded files when debug mode is enabled
+- Backward compatibility with empty defaults for existing installations
 
-#### 🛡️ Quality Assurance
-- **Comprehensive Testing**: All existing tests pass, exclusion patterns validated
-- **Type Safety**: Full TypeScript integration with proper interfaces
-- **Error Handling**: Graceful handling of invalid patterns with console warnings
-- **Memory Efficient**: Minimal overhead for empty exclusion lists
+#### Quality Assurance
+- All existing tests pass with exclusion pattern validation
+- Full TypeScript integration with proper interfaces
+- Error handling for invalid patterns with console warnings
+- Minimal overhead for empty exclusion lists
 
 ### v2.1.4 - Enhanced API Error Handling (2025-08-11)
 
-#### 🔧 Bug Fixes & Improvements
-- **Enhanced API Key Validation**: Improved validation for empty/whitespace-only API keys
-- **Automatic URL Correction**: Auto-detects and fixes invalid Anthropic URLs to use correct `/v1/messages` endpoint  
-- **Better Error Messages**: Specific error messages for different HTTP status codes (404, 401, 400, 403, 429)
-- **Configuration Validation**: Pre-flight validation prevents API calls with invalid configurations
-- **OpenAI Key Format Checking**: Validates that OpenAI keys start with "sk-" prefix
+#### Bug Fixes & Improvements
+- Improved API key validation for empty/whitespace-only keys
+- Auto-detection and correction of invalid Anthropic URLs to use `/v1/messages` endpoint  
+- Specific error messages for different HTTP status codes (404, 401, 400, 403, 429)
+- Pre-flight configuration validation to prevent API calls with invalid configurations
+- OpenAI key format validation requiring "sk-" prefix
 
-#### 🛡️ Technical Improvements  
-- **Comprehensive Error Context**: Enhanced debug logging with request details and configuration info
-- **Actionable Error Messages**: Error messages now include specific steps to fix configuration issues
-- **Robust Configuration Handling**: Validates provider settings before making API requests
-- **Improved Debugging**: Better error tracking and correlation for troubleshooting API issues
+#### Technical Improvements  
+- Debug logging with request details and configuration information
+- Error messages include specific steps to fix configuration issues
+- Provider settings validation before making API requests
+- Error tracking and correlation for troubleshooting API issues
 
 ### v2.1.2 - Performance-Optimized Debug Logging (2025-01-08)
 
-#### ⚡ Performance Optimizations
-- **Object Pooling**: Implemented entry reuse system reducing GC pressure by ~90%
-- **Memory Management**: Automatic log rotation with configurable cleanup intervals (30s)
-- **Optimized Serialization**: Pre-allocated arrays and circular reference detection for export operations
-- **Zero-Overhead Logging**: Enhanced conditional logging with performance tracking using `performance.now()`
+#### Performance Optimizations
+- Entry reuse system for reduced garbage collection pressure
+- Automatic log rotation with configurable cleanup intervals
+- Pre-allocated arrays and circular reference detection for export operations
+- Conditional logging with performance tracking
 
-#### 🔧 Advanced Features  
-- **Performance Metrics API**: Real-time monitoring of logging overhead and memory utilization
-- **Memory Safety**: Automatic pool management and reference leak prevention
-- **Optimized Export**: Efficient string building with size limits to prevent memory issues
-- **Force Optimization**: Manual memory cleanup and optimization methods
+#### Additional Features  
+- Real-time monitoring of logging overhead and memory utilization
+- Automatic pool management and reference leak prevention
+- Efficient string building with size limits to prevent memory issues
+- Manual memory cleanup and optimization methods
 
-#### 🛡️ Technical Improvements
-- **Smart Pool Management**: Dynamic pool sizing (max 100 entries) with periodic cleanup
-- **Circular Reference Handling**: Safe serialization preventing infinite loops during export
-- **Memory Compaction**: Array optimization to reduce memory fragmentation
-- **Performance Tracking**: Average logging time and utilization percentage monitoring
+#### Technical Improvements
+- Dynamic pool sizing (max 100 entries) with periodic cleanup
+- Safe serialization preventing infinite loops during export
+- Array optimization to reduce memory fragmentation
+- Average logging time and utilization percentage monitoring
 
 ### v2.1.1 - Debug Logging Infrastructure (2025-01-08)
 
-#### 🔍 New Features
-- **Debug Logger Core**: Comprehensive logging infrastructure with correlation tracking and memory management
-- **TaskProcessor Integration**: Complete debug logging integration with zero performance impact when disabled
-- **Structured Logging**: Categorized logs (file-processing, llm-call, task-creation, validation, error) with contextual data
-- **Correlation Tracking**: Related operations share correlation IDs for easy workflow tracing
-- **Memory Management**: Automatic log rotation and cleanup to prevent memory issues
+#### New Features
+- Logging infrastructure with correlation tracking and memory management
+- Debug logging integration with minimal performance impact when disabled
+- Categorized logs (file-processing, llm-call, task-creation, validation, error) with contextual data
+- Related operations share correlation IDs for workflow tracing
+- Automatic log rotation and cleanup to prevent memory issues
 
-#### 🛠️ Technical Improvements
-- **Zero Overhead Design**: Conditional logging ensures no performance impact when debug mode is disabled
-- **Comprehensive Coverage**: Logs all major decision points, file filtering, LLM calls, and task creation
-- **Error Context**: Detailed error logging with stack traces and contextual information
-- **Settings Integration**: Debug mode toggle and max entries configuration in settings UI
+#### Technical Improvements
+- Conditional logging with minimal performance impact when debug mode is disabled
+- Logging coverage for major decision points, file filtering, LLM calls, and task creation
+- Error logging with stack traces and contextual information
+- Debug mode toggle and max entries configuration in settings UI
 
-#### 🧪 Testing
-- **Integration Tests**: Comprehensive test suite verifying debug logging functionality
-- **Performance Validation**: Tests confirm zero overhead when debug mode is disabled
-- **Correlation Verification**: Tests ensure proper correlation ID tracking across operations
+#### Testing
+- Test suite verifying debug logging functionality
+- Performance tests confirm minimal overhead when debug mode is disabled
+- Tests ensure proper correlation ID tracking across operations
 
 ### v2.1.0 - Flexible Frontmatter Filtering & Enhanced UI (2025-01-08)
 
-#### 🎯 New Features
-- **Flexible Frontmatter Field Configuration**: Customize which frontmatter field triggers processing (defaults to "Type" for backward compatibility)
-- **Enhanced Slider Components**: Bidirectional slider-input synchronization with real-time validation
-- **Improved Input Validation**: Comprehensive bounds checking, NaN handling, and visual feedback
-- **Comprehensive Test Suite**: 41 unit and integration tests ensuring reliability and maintainability
+#### New Features
+- Flexible frontmatter field configuration for customizing which field triggers processing (defaults to "Type" for backward compatibility)
+- Bidirectional slider-input synchronization with real-time validation
+- Bounds checking, NaN handling, and visual feedback for input validation
+- 41 unit and integration tests for reliability and maintainability
 
-#### 🔧 Technical Improvements
+#### Technical Improvements
 - YAML key validation for frontmatter field names with graceful fallback
-- Enhanced UI components with better accessibility and user experience
-- Robust error handling and validation throughout the application
+- UI components with accessibility and user experience improvements
+- Error handling and validation throughout the application
 - Full backward compatibility - existing configurations work unchanged
 
 ### v2.0.0 - Quality & Reliability Improvements (2025-01-08)
 
-#### 🔧 Major Improvements
-- **Task 1**: Eliminated code duplication - Reduced duplicated code by >90% through unified method extraction
-- **Task 2**: Fixed race conditions - Implemented atomic file processing with proper cleanup and timeout protection  
-- **Task 3**: Improved type safety - Added comprehensive type guards and runtime validation, eliminated unsafe casting
-- **Task 4**: Optimized batch processing - Implemented controlled concurrency with memory monitoring and progress feedback
-- **Task 5**: Standardized error handling - Created comprehensive error management system with custom error classes and recovery strategies
-- **Task 6**: Implemented memory management - Added memory monitoring, periodic cleanup, and configurable size limits to prevent memory leaks
+#### Major Improvements
+- Eliminated code duplication through unified method extraction
+- Fixed race conditions with atomic file processing and proper cleanup with timeout protection  
+- Improved type safety with type guards and runtime validation, eliminated unsafe casting
+- Optimized batch processing with controlled concurrency, memory monitoring and progress feedback
+- Standardized error handling with error management system using custom error classes and recovery strategies
+- Implemented memory management with monitoring, periodic cleanup, and configurable size limits to prevent memory leaks
+- Optimized string operations with precompiled regex patterns and combined operations
+- Logging and debugging system with contextual information, timing, and debug capabilities
 
+#### Performance Improvements
+- Automatic cleanup prevents indefinite memory growth during long sessions
+- Improved filename sanitization and string operations
+- Eliminated race conditions and file processing conflicts
+- Retry mechanisms with exponential backoff
+- Debouncer map size management with reasonable limits
 
-- **Task 7**: Optimized string operations - Precompiled regex patterns and combined operations for 20%+ performance improvement
-- **Task 8**: Enhanced logging and debugging - Implemented structured logging system with contextual information, timing, and debug capabilities
+#### New Features
+- Debug system with contextual information and performance timing
+- Real-time monitoring of memory usage and cleanup operations
+- Error information with provider, model, and file context
+- User notifications for batch operations with >10 files
+- Built-in tools to verify optimization improvements
 
-#### 🚀 Performance Gains
-- **Memory Usage**: Automatic cleanup prevents indefinite growth during long sessions
-- **Processing Speed**: 20%+ improvement in filename sanitization and string operations
-- **Reliability**: Eliminated race conditions and file processing conflicts
-- **Error Recovery**: Intelligent retry mechanisms with exponential backoff
-- **Resource Management**: Debouncer Map size stays under reasonable limits (<1000 entries)
-
-#### 🔍 New Features
-- **Structured Logging**: Comprehensive debug system with contextual information and performance timing
-- **Memory Statistics**: Real-time monitoring of memory usage and cleanup operations
-- **Error Context**: Detailed error information with provider, model, and file context
-- **Progress Feedback**: User notifications for batch operations with >10 files
-- **Performance Benchmarking**: Built-in tools to verify optimization improvements
-
-#### 🛠️ Developer Experience
-- **Type Safety**: Runtime validation prevents errors and ensures data integrity
-- **Debug Commands**: Built-in benchmarking and memory statistics commands
-- **Log Management**: Export, clear, and search functionality for troubleshooting
-- **Settings Integration**: User-configurable memory limits, log levels, and debug options
+#### Developer Experience
+- Runtime validation prevents errors and ensures data integrity
+- Built-in benchmarking and memory statistics commands
+- Export, clear, and search functionality for troubleshooting
+- User-configurable memory limits, log levels, and debug options
 
 ### Previous Versions
 - **v1.x**: Initial release with multi-provider LLM support and performance optimizations
 
-## 🎯 Roadmap
+## Roadmap
 
 - [ ] Task priority learning from user feedback
 - [ ] Integration with external task management systems
@@ -627,4 +625,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**Made with ❤️ for the Obsidian community**
+Made for the Obsidian community
