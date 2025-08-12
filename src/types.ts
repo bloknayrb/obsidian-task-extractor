@@ -147,7 +147,6 @@ DO NOT extract:
 
 Return valid JSON in this exact structure:
 
-```json
 {
   "found": boolean,
   "tasks": [
@@ -164,7 +163,6 @@ Return valid JSON in this exact structure:
   ],
   "confidence": "high|medium|low (overall extraction confidence)"
 }
-```
 
 When no actionable tasks are found, return: {"found": false, "tasks": []}
 
