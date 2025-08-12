@@ -15,6 +15,7 @@ An advanced Obsidian plugin that automatically extracts actionable tasks from em
 - Intelligent task extraction for specific individuals
 - Configurable note types and trigger conditions
 - Duplicate prevention system
+- **File/folder exclusion** with flexible patterns
 
 ### Customizable Frontmatter
 - Template-based task note generation
@@ -176,6 +177,45 @@ NoteType: Meeting   # Or any other field name
 - Backward compatible - defaults to "Type" if not configured
 
 **Validation**: Field names must follow YAML key format (letters, numbers, underscores, hyphens, dots)
+
+### File/Folder Exclusions
+
+**NEW**: Prevent specific files or folders from being processed with flexible exclusion rules:
+
+#### Excluded Paths (Exact Matches)
+Specify exact file or folder paths to exclude:
+```
+Templates/
+Archive/Old Notes/
+Private/secrets.md
+```
+
+#### Exclusion Patterns (Wildcards)
+Use glob patterns for flexible matching:
+```
+*.template.md     # All template files
+**/drafts/**     # Any drafts folder and contents  
+Archive/**       # Entire Archive folder
+temp?.md         # temp1.md, temp2.md, etc.
+```
+
+#### Wildcard Support
+- `*` - Matches any characters except `/` (single directory level)
+- `**` - Matches any characters including `/` (multiple directory levels)
+- `?` - Matches exactly one character
+
+#### Configuration
+1. Go to **Settings → File/Folder Exclusion Settings**
+2. Add comma-separated paths or patterns
+3. Both exact paths and patterns can be used together
+4. Changes apply immediately to new file processing
+
+#### Use Cases
+- **Templates**: Exclude template files from being processed
+- **Archives**: Skip old/completed notes  
+- **Personal**: Exclude private or sensitive folders
+- **Drafts**: Skip work-in-progress notes
+- **System**: Exclude generated or temporary files
 
 ### Advanced Settings
 
@@ -444,6 +484,32 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Documentation**: This README and in-plugin help
 
 ## 📈 Changelog
+
+### v2.2.0 - File/Folder Exclusion System (2025-08-12)
+
+#### 🎯 New Features
+- **File/Folder Exclusions**: Comprehensive exclusion system to prevent processing of specific files or folders
+- **Exact Path Matching**: Exclude files/folders by exact path (e.g., `"Templates/"`, `"Archive/Old Notes/"`)
+- **Glob Pattern Support**: Flexible wildcard patterns (`*.template.md`, `**/drafts/**`, `Archive/**`)
+- **Mixed Exclusions**: Combine exact paths and patterns for maximum flexibility
+
+#### 🔧 Technical Implementation  
+- **Cross-Platform Compatibility**: Normalized path separators work on Windows, Mac, and Linux
+- **Performance Optimized**: Exclusion checks happen early in processing pipeline to minimize overhead
+- **Pattern Matching**: Robust glob-to-regex conversion with proper escaping and anchoring
+- **Validation**: Input sanitization prevents invalid patterns and provides user feedback
+
+#### 🎨 User Experience
+- **Intuitive Settings UI**: Clear examples and descriptions with visual styling
+- **Real-time Application**: Changes apply immediately without plugin restart
+- **Debug Logging**: Excluded files logged when debug mode enabled
+- **Backward Compatible**: Empty defaults ensure existing installations unaffected
+
+#### 🛡️ Quality Assurance
+- **Comprehensive Testing**: All existing tests pass, exclusion patterns validated
+- **Type Safety**: Full TypeScript integration with proper interfaces
+- **Error Handling**: Graceful handling of invalid patterns with console warnings
+- **Memory Efficient**: Minimal overhead for empty exclusion lists
 
 ### v2.1.4 - Enhanced API Error Handling (2025-08-11)
 

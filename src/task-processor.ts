@@ -82,6 +82,16 @@ export class TaskProcessor {
     const correlationId = this.startOperation('file-processing', 'Processing file', { 
       filePath: file.path 
     });
+
+    // Check exclusion rules early to avoid unnecessary processing
+    if (this.isFileExcluded(file.path)) {
+      this.log('info', 'file-processing', 'File skipped: excluded by user rules', { 
+        filePath: file.path,
+        excludedPaths: this.settings.excludedPaths,
+        excludedPatterns: this.settings.excludedPatterns
+      }, correlationId);
+      return;
+    }
     
     // Check if already in processing queue or set
     const queueStatus = this.processingQueue.get(file.path);
@@ -297,6 +307,11 @@ export class TaskProcessor {
     const unprocessedFiles: TFile[] = [];
     
     for (const f of files) {
+      // Apply exclusion filters first
+      if (this.isFileExcluded(f.path)) {
+        continue;
+      }
+      
       const cache = this.app.metadataCache.getFileCache(f);
       const front = cache?.frontmatter;
       if (!front) continue;
@@ -924,6 +939,90 @@ When no tasks found, return: {"found": false, "tasks": []}`;
 
   private makeFilenameSafe(title: string) {
     return title.replace(/[\\/:*?"<>|#%{}\\^~\[\]`;'@&=+]/g, '').replace(/\s+/g, '-').slice(0, 120);
+  }
+
+  /**
+   * Checks if a file path is excluded based on exact path matches
+   */
+  private isPathExcluded(filePath: string): boolean {
+    if (!this.settings.excludedPaths || this.settings.excludedPaths.length === 0) {
+      return false;
+    }
+    
+    // Normalize path separators for cross-platform compatibility
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    
+    return this.settings.excludedPaths.some(excludedPath => {
+      const normalizedExcluded = excludedPath.replace(/\\/g, '/');
+      
+      // Handle folder exclusions (ending with /)
+      if (normalizedExcluded.endsWith('/')) {
+        return normalizedPath.startsWith(normalizedExcluded) || 
+               normalizedPath.startsWith(normalizedExcluded.slice(0, -1) + '/');
+      }
+      
+      // Exact path match
+      return normalizedPath === normalizedExcluded;
+    });
+  }
+  
+  /**
+   * Checks if a file path matches any exclusion patterns (glob-style)
+   */
+  private matchesExclusionPattern(filePath: string): boolean {
+    if (!this.settings.excludedPatterns || this.settings.excludedPatterns.length === 0) {
+      return false;
+    }
+    
+    // Normalize path separators for cross-platform compatibility
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    
+    return this.settings.excludedPatterns.some(pattern => {
+      const normalizedPattern = pattern.replace(/\\/g, '/');
+      
+      // Convert glob pattern to regex
+      const regexPattern = this.globToRegex(normalizedPattern);
+      
+      try {
+        return new RegExp(regexPattern, 'i').test(normalizedPath);
+      } catch (error) {
+        // Invalid regex pattern, skip it
+        console.warn(`TaskExtractor: Invalid exclusion pattern: ${pattern}`);
+        return false;
+      }
+    });
+  }
+  
+  /**
+   * Converts a glob pattern to a regex pattern
+   */
+  private globToRegex(pattern: string): string {
+    // Escape special regex characters except * and ?
+    let regexPattern = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    
+    // Convert glob wildcards to regex
+    regexPattern = regexPattern
+      .replace(/\*\*/g, '§DOUBLESTAR§') // Temporarily replace ** to handle it specially
+      .replace(/\*/g, '[^/]*')         // * matches any character except /
+      .replace(/§DOUBLESTAR§/g, '.*')  // ** matches any characters including /
+      .replace(/\?/g, '[^/]');         // ? matches any single character except /
+    
+    // Anchor the pattern
+    if (!regexPattern.startsWith('^')) {
+      regexPattern = '^' + regexPattern;
+    }
+    if (!regexPattern.endsWith('$')) {
+      regexPattern = regexPattern + '$';
+    }
+    
+    return regexPattern;
+  }
+  
+  /**
+   * Main exclusion check combining both path and pattern matching
+   */
+  private isFileExcluded(filePath: string): boolean {
+    return this.isPathExcluded(filePath) || this.matchesExclusionPattern(filePath);
   }
 
   /**

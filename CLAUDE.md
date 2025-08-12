@@ -13,6 +13,7 @@ This is an Obsidian plugin that leverages LLMs to extract todo items from notes.
 - **Dynamic model fetching**: Automatically retrieves available models from cloud providers
 - **Smart settings UI**: Dropdowns for model selection with loading states and error handling  
 - **Task extraction**: Analyzes notes and extracts actionable todo items
+- **File/folder exclusions**: Comprehensive exclusion system with exact paths and glob patterns
 - **Frontmatter integration**: Fully customizable frontmatter templates with 8 field types
 - **Notification management**: Single notifications (no spam) for missing API keys
 - **Advanced debug logging**: Comprehensive debugging system with performance optimizations
@@ -26,9 +27,10 @@ The main plugin file is `obsidian_task_extractor.ts`. The core functionality rev
 
 1. **Provider-specific LLM calling**: The `callLLM` function branches by provider to handle different API formats
 2. **Task extraction**: LLM analyzes note content to identify actionable tasks
-3. **Metadata handling**: Extracts project and client information, defaulting to null if not present
-4. **Note creation**: Creates new task notes with proper frontmatter structure
-5. **Debug logging system**: Comprehensive logging infrastructure with performance optimizations
+3. **File exclusion system**: Filters out files based on exact paths and glob patterns before processing
+4. **Metadata handling**: Extracts project and client information, defaulting to null if not present
+5. **Note creation**: Creates new task notes with proper frontmatter structure
+6. **Debug logging system**: Comprehensive logging infrastructure with performance optimizations
 
 ### Model Selection and Defaults
 
@@ -52,8 +54,24 @@ The debug logging system (`src/debug-logger.ts`) provides:
 
 Key components:
 - `DebugLogger`: Core logging class with performance optimizations
-- `TaskProcessor`: File processing and task extraction event logging  
+- `TaskProcessor`: File processing, exclusion filtering, and task extraction event logging  
 - `LLMProviderManager`: API call logging and service detection tracking
+
+### File/Folder Exclusion System
+
+The exclusion system (`src/task-processor.ts`) provides:
+
+- **Exact path matching**: Direct file/folder path exclusions (e.g., `"Templates/"`, `"private.md"`)
+- **Glob pattern support**: Wildcard patterns (`*.template.md`, `**/drafts/**`, `Archive/**`)
+- **Cross-platform compatibility**: Normalized path separators for Windows/Mac/Linux
+- **Performance optimization**: Early exclusion checks to minimize processing overhead
+- **Pattern validation**: Input sanitization and error handling for invalid patterns
+
+Key exclusion methods:
+- `isPathExcluded()`: Checks exact path matches with folder handling
+- `matchesExclusionPattern()`: Glob pattern matching with regex conversion
+- `isFileExcluded()`: Combined exclusion check integrating both methods
+- `globToRegex()`: Converts glob patterns to regex with proper escaping
 
 ## Security & Dependencies
 

@@ -38,6 +38,10 @@ export interface ExtractorSettings {
   triggerTypes: string[]; // customizable note types to process
   triggerFrontmatterField: string; // configurable frontmatter field for filtering
   
+  // Exclusion settings
+  excludedPaths: string[]; // exact paths to exclude (files or folders)
+  excludedPatterns: string[]; // glob-style patterns to exclude
+  
   // Customizable frontmatter
   frontmatterFields: FrontmatterField[];
   customPrompt: string;
@@ -112,6 +116,10 @@ export const DEFAULT_SETTINGS: ExtractorSettings = {
   processOnUpdate: false,
   triggerTypes: ['email', 'meetingnote', 'meeting note', 'meeting notes'],
   triggerFrontmatterField: 'Type', // default to "Type" for backward compatibility
+  
+  // Exclusion settings
+  excludedPaths: [],
+  excludedPatterns: [],
   
   // Customizable frontmatter
   frontmatterFields: DEFAULT_FRONTMATTER_FIELDS,
@@ -199,6 +207,28 @@ export function validateSettings(settings: Partial<ExtractorSettings>, debugLogg
     if (validFields.length > 0) {
       validated.frontmatterFields = validFields;
     }
+  }
+  
+  // Validate exclusion arrays
+  if (Array.isArray(settings.excludedPaths)) {
+    const validPaths = settings.excludedPaths
+      .filter(p => typeof p === 'string' && p.trim().length > 0)
+      .map(p => p.trim())
+      .filter(p => {
+        // Basic path validation - no empty strings, and reasonable length
+        return p.length > 0 && p.length < 500;
+      });
+    validated.excludedPaths = validPaths;
+  }
+  if (Array.isArray(settings.excludedPatterns)) {
+    const validPatterns = settings.excludedPatterns
+      .filter(p => typeof p === 'string' && p.trim().length > 0)
+      .map(p => p.trim())
+      .filter(p => {
+        // Basic pattern validation - no empty strings, reasonable length, and basic glob pattern check
+        return p.length > 0 && p.length < 500 && !/[<>:"|?]/.test(p);
+      });
+    validated.excludedPatterns = validPatterns;
   }
 
   // Validate numeric fields with bounds

@@ -132,6 +132,9 @@ export class ExtractorSettingTab extends PluginSettingTab {
     // Processing Settings
     this.addProcessingSection(containerEl);
     
+    // Exclusion Settings
+    this.addExclusionSection(containerEl);
+    
     // Frontmatter Customization
     this.addFrontmatterSection(containerEl);
     
@@ -407,6 +410,70 @@ export class ExtractorSettingTab extends PluginSettingTab {
       .addText(text => text
         .setValue(this.settings.processedFrontmatterKey)
         .onChange((v) => { this.settings.processedFrontmatterKey = v.trim(); this.debouncedSave(); }));
+  }
+  
+  private addExclusionSection(containerEl: HTMLElement): void {
+    containerEl.createEl('h3', { text: 'File/Folder Exclusion Settings' });
+    
+    // Add description
+    containerEl.createEl('p', {
+      text: 'Exclude specific files or folders from being processed by the task extractor.',
+      cls: 'setting-item-description'
+    });
+    
+    new Setting(containerEl)
+      .setName('Excluded Paths')
+      .setDesc('Comma-separated list of exact file or folder paths to exclude. Examples: "Templates/", "Archive/Old Notes/", "Private/secrets.md"')
+      .addTextArea(text => text
+        .setPlaceholder('Templates/, Archive/, Private/secrets.md')
+        .setValue(this.settings.excludedPaths.join(', '))
+        .onChange((v) => { 
+          this.settings.excludedPaths = v.split(',')
+            .map(s => s.trim())
+            .filter(s => s.length > 0);
+          this.debouncedSave(); 
+        }));
+    
+    new Setting(containerEl)
+      .setName('Exclusion Patterns')
+      .setDesc('Comma-separated list of glob patterns to exclude files. Supports wildcards: * (any characters except /), ** (any characters including /), ? (single character). Examples: "*.template.md", "**/drafts/**", "Archive/**"')
+      .addTextArea(text => text
+        .setPlaceholder('*.template.md, **/drafts/**, Archive/**')
+        .setValue(this.settings.excludedPatterns.join(', '))
+        .onChange((v) => { 
+          this.settings.excludedPatterns = v.split(',')
+            .map(s => s.trim())
+            .filter(s => s.length > 0);
+          this.debouncedSave(); 
+        }));
+    
+    // Add examples section
+    const examplesEl = containerEl.createDiv({ cls: 'task-extractor-examples' });
+    examplesEl.createEl('h4', { text: 'Examples:' });
+    
+    const examplesList = examplesEl.createEl('ul');
+    examplesList.createEl('li').createEl('strong').setText('Exact Paths: ');
+    examplesList.lastChild?.createEl('code').setText('"Templates/"');
+    examplesList.lastChild?.appendText(' - excludes entire Templates folder');
+    
+    examplesList.createEl('li').createEl('strong').setText('File Extensions: ');
+    examplesList.lastChild?.createEl('code').setText('"*.tmp"');
+    examplesList.lastChild?.appendText(' - excludes all .tmp files');
+    
+    examplesList.createEl('li').createEl('strong').setText('Nested Folders: ');
+    examplesList.lastChild?.createEl('code').setText('"**/drafts/**"');
+    examplesList.lastChild?.appendText(' - excludes any drafts folder and its contents');
+    
+    examplesList.createEl('li').createEl('strong').setText('Mixed: ');
+    examplesList.lastChild?.createEl('code').setText('"Archive/**, *.template.md, Private/"');
+    examplesList.lastChild?.appendText(' - excludes Archive folder, template files, and Private folder');
+    
+    // Add styling for better visual separation
+    examplesEl.style.marginTop = '16px';
+    examplesEl.style.padding = '12px';
+    examplesEl.style.backgroundColor = 'var(--background-secondary)';
+    examplesEl.style.borderRadius = '8px';
+    examplesEl.style.fontSize = '0.9em';
   }
   
   private addFrontmatterSection(containerEl: HTMLElement): void {
