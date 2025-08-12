@@ -244,21 +244,29 @@ temp?.md         # temp1.md, temp2.md, etc.
 
 ### Custom Prompts
 
-Override the default task extraction prompt for specialized use cases:
+Override the default task extraction prompt for specialized use cases. The default prompt now uses advanced prompt engineering techniques for improved accuracy and reliability.
 
+#### Enhanced Default Prompt Features (v2.3.0)
+- **Multi-stage analysis framework**: Systematic 3-step process (Context → Identification → Extraction)
+- **Chain-of-thought reasoning**: Built-in validation checkpoints and quality assurance
+- **Improved accuracy**: Conservative extraction principles with confidence scoring
+- **Better frontmatter integration**: Enhanced metadata extraction aligned with TaskNotes patterns
+- **Hallucination prevention**: Strong validation rules and explicit null handling
+
+#### Example Custom Prompt
 ```
-You are a task extraction assistant specialized in [your domain]. 
-Look for tasks specifically assigned to [Owner Name].
-Focus on [specific criteria]...
+You are a task extraction specialist for [your domain].
+Focus on tasks specifically assigned to [Owner Name].
+Extract only actionable items with clear deliverables...
 ```
 
 **Configuration**:
 1. Go to **Settings → Task Note Frontmatter**
 2. Enter your custom prompt in the **Custom Prompt** text area
-3. Use **Reset to Default** button to restore the original prompt
+3. Use **Reset to Default** button to restore the enhanced default prompt
 4. Leave empty to use the built-in default prompt
 
-**Reset Functionality**: The reset button automatically substitutes your configured owner name into the default prompt and refreshes the UI immediately.
+**Reset Functionality**: The reset button automatically substitutes your configured owner name into the enhanced default prompt and refreshes the UI immediately.
 
 ## Usage
 
@@ -518,6 +526,28 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Documentation**: This README and in-plugin help
 
 ## Changelog
+
+### v2.3.0 - Enhanced Task Extraction Prompt (2025-08-12)
+
+#### New Features
+- **Advanced prompt engineering**: Complete rewrite of default task extraction prompt using research-backed best practices
+- **Multi-stage analysis framework**: Systematic 3-step process (Context Analysis → Task Identification → Information Extraction)
+- **Chain-of-thought reasoning**: Built-in validation checkpoints and quality assurance steps
+- **Improved accuracy**: Conservative extraction principles with confidence scoring and hallucination prevention
+- **Enhanced metadata extraction**: Better frontmatter integration aligned with TaskNotes repository patterns
+
+#### Technical Improvements
+- **Structured prompt architecture**: Clear role definition, hierarchical instructions, and validation rules
+- **Quality standards**: Explicit filtering criteria and mandatory exclusions to prevent false positives
+- **Confidence assessment**: Three-tier confidence scoring (high/medium/low) with extraction thresholds
+- **Better output validation**: Detailed JSON schema with field specifications and format examples
+- **Task identification criteria**: Specific action verbs, measurable outcomes, and feasibility checks
+
+#### User Experience
+- **More reliable extractions**: Reduced false positives and improved task quality through conservative extraction
+- **Better context preservation**: Enhanced source excerpts and project/client detection
+- **Improved metadata**: More accurate priority assignment and due date extraction
+- **Professional output**: Cleaner, more actionable task titles and descriptions
 
 ### v2.2.0 - File/Folder Exclusion System (2025-08-12)
 
