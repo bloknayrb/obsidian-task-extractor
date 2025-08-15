@@ -2,12 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ExtractorSettings, DEFAULT_SETTINGS, validateSettings, DEFAULT_EXTRACTION_PROMPT } from '../src/types';
 import { TaskProcessor } from '../src/task-processor';
 import { LLMProviderManager } from '../src/llm-providers';
-import { App, TFile } from 'obsidian';
+import { App, TFile } from './mocks/obsidian';
 
 // Mock the LLMProviderManager
 vi.mock('../src/llm-providers', () => ({
   LLMProviderManager: vi.fn().mockImplementation(() => ({
-    callLLM: vi.fn().mockResolvedValue('{"found": true, "task_title": "Test Task", "task_details": "Test details"}')
+    callLLM: vi.fn().mockResolvedValue('{"found": true, "tasks": [{"task_title": "Test Task", "task_details": "Test details", "priority": "normal", "confidence": "high"}], "confidence": "high"}')
   }))
 }));
 
@@ -24,7 +24,7 @@ describe('Integration Tests - Complete Workflow', () => {
     // Mock vault
     app.vault = {
       read: vi.fn().mockResolvedValue('Test email content'),
-      create: vi.fn().mockResolvedValue(undefined),
+      create: vi.fn().mockResolvedValue(new TFile('Tasks/Test-Task.md')),
       getMarkdownFiles: vi.fn().mockReturnValue([]),
       getAbstractFileByPath: vi.fn().mockReturnValue(null)
     } as any;

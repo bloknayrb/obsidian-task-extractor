@@ -20,7 +20,7 @@ describe('TaskProcessor - Frontmatter Field Formatting', () => {
       ...DEFAULT_SETTINGS,
       frontmatterFields: [
         { key: 'task', defaultValue: '', type: 'text', required: true },
-        { key: 'priority', defaultValue: 'medium', type: 'select', options: ['low', 'medium', 'high'], required: true },
+        { key: 'priority', defaultValue: 'normal', type: 'select', options: ['low', 'normal', 'high'], required: true },
         { key: 'due', defaultValue: '', type: 'date', required: false },
         { key: 'completed', defaultValue: 'false', type: 'boolean', required: false },
         { key: 'project', defaultValue: '', type: 'text', required: false }
@@ -184,7 +184,7 @@ describe('TaskProcessor - Frontmatter Field Formatting', () => {
 
       // Should use empty placeholder for missing required field
       expect(createdContent).toContain('task: ""');
-      expect(createdContent).toContain('priority: medium');
+      expect(createdContent).toContain('priority: normal'); // medium maps to normal for TaskNotes compatibility
     });
 
     it('should skip optional fields with no values', async () => {

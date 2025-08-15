@@ -27,6 +27,17 @@ var import_obsidian4 = require("obsidian");
 // src/types.ts
 var DEFAULT_EXTRACTION_PROMPT = `You are an expert task extraction specialist focused on identifying actionable items from notes, emails, and meeting records. Your role is to systematically analyze content and extract only legitimate, actionable tasks with accurate contextual metadata.
 
+Extract actionable tasks
+Extract tasks only for the specified person: {ownerName} (exact name)
+
+Extract ONLY concrete, actionable tasks
+
+## EXTRACTION RULES
+
+## PRIORITY GUIDELINES
+
+## VALIDATION CONSTRAINTS
+
 ## ANALYSIS FRAMEWORK
 
 ### STEP 1: Context Analysis
@@ -44,16 +55,18 @@ Apply these strict criteria for actionable tasks:
 
 ### STEP 3: Information Extraction
 For each valid task, extract:
-- **task_title**: Concise action-oriented title (6-100 chars) using active verbs
-- **task_details**: Specific context and requirements (1-3 sentences, max 300 chars)
-- **due_date**: Only extract if explicitly stated as YYYY-MM-DD, otherwise null
+- **task_title**: Concise action-oriented title (task_title: 6-100 characters) using active verbs
+- **task_details**: Specific context and requirements (task_details: max 300 characters, 1-3 sentences)
+- **due_date**: Only extract if explicitly stated (due_date: YYYY-MM-DD format), otherwise null
+- **scheduled_date**: Date when task should be worked on (YYYY-MM-DD), otherwise null
 - **priority**: Based on context clues:
-  - high: explicit urgency, "ASAP", "urgent", specific deadlines, escalations
-  - medium: standard business requests, regular follow-ups
-  - low: optional items, "when you have time", suggestions
-- **project**: Extract project name only if explicitly mentioned, otherwise null
-- **client**: Extract client name only if explicitly mentioned, otherwise null
-- **source_excerpt**: Exact quote (max 150 chars) that justifies the task extraction
+  - high: explicit urgency/deadline mentioned, "ASAP", "urgent", specific deadlines, escalations
+  - normal: standard business requests, regular follow-ups
+  - medium: standard requests without time pressure
+  - low: optional/background items, "when you have time", suggestions
+- **projects**: Array of project names if explicitly mentioned, otherwise empty array
+- **contexts**: Array of contexts (work environment, tools, people) if mentioned, otherwise empty array
+- **source_excerpt**: Exact quote (source_excerpt: exact quote (max 150 chars)) that justifies the task extraction
 - **confidence**: Your assessment of extraction accuracy:
   - high: clearly stated task with explicit assignment
   - medium: reasonably implied task with good context
@@ -70,8 +83,8 @@ DO NOT extract:
 - Meeting logistics or informational updates
 
 ### Quality Standards
-- NEVER guess or infer information not present in the text
-- Use null for any uncertain fields rather than making assumptions
+- NEVER guess or infer information not present in the text (DO NOT GUESS)
+- Use null for uncertain/missing information rather than making assumptions
 - Ensure task_title uses active, specific language
 - Validate that extracted dates are reasonable and explicitly mentioned
 - Source_excerpt must be an exact quote that supports the task extraction
@@ -83,7 +96,7 @@ DO NOT extract:
 
 ## OUTPUT FORMAT
 
-Return valid JSON in this exact structure:
+Return valid JSON only in this exact structure:
 
 {
   "found": boolean,
@@ -92,9 +105,10 @@ Return valid JSON in this exact structure:
       "task_title": "string (6-100 chars, action-oriented)",
       "task_details": "string (max 300 chars, specific context)",
       "due_date": "YYYY-MM-DD or null",
-      "priority": "high|medium|low",
-      "project": "string or null",
-      "client": "string or null", 
+      "scheduled_date": "YYYY-MM-DD or null",
+      "priority": "high|normal|low",
+      "projects": ["string"] or [],
+      "contexts": ["string"] or [],
       "source_excerpt": "string (exact quote, max 150 chars)",
       "confidence": "high|medium|low"
     }
@@ -102,6 +116,7 @@ Return valid JSON in this exact structure:
   "confidence": "high|medium|low (overall extraction confidence)"
 }
 
+If no clear tasks exist, return {"found": false, "tasks": []}
 When no actionable tasks are found, return: {"found": false, "tasks": []}
 
 ## QUALITY ASSURANCE
@@ -111,16 +126,21 @@ Before finalizing extraction:
 3. Check that extracted information serves the user's productivity needs
 4. Ensure JSON structure is valid and complete
 
-Remember: Accuracy and reliability are more important than completeness. Extract conservatively and only include tasks you are confident about.`;
+Remember: Accuracy and reliability are more important than completeness. Extract conservatively and only include tasks you are confident about.
+
+Be conservative - accuracy over completeness.`;
 var DEFAULT_FRONTMATTER_FIELDS = [
-  { key: "task", defaultValue: "", type: "text", required: true },
-  { key: "status", defaultValue: "inbox", type: "select", options: ["inbox", "next", "waiting", "someday", "done", "cancelled"], required: true },
-  { key: "priority", defaultValue: "medium", type: "select", options: ["low", "medium", "high", "urgent"], required: true },
+  { key: "title", defaultValue: "", type: "text", required: true },
+  { key: "status", defaultValue: "open", type: "select", options: ["open", "in-progress", "done"], required: true },
+  { key: "priority", defaultValue: "normal", type: "select", options: ["low", "normal", "high"], required: true },
   { key: "due", defaultValue: "", type: "date", required: false },
-  { key: "project", defaultValue: "", type: "text", required: false },
-  { key: "client", defaultValue: "", type: "text", required: false },
-  { key: "created", defaultValue: "{{date}}", type: "date", required: true },
-  { key: "tags", defaultValue: "task", type: "text", required: false }
+  { key: "scheduled", defaultValue: "", type: "date", required: false },
+  { key: "contexts", defaultValue: "", type: "text", required: false },
+  { key: "projects", defaultValue: "", type: "text", required: false },
+  { key: "tags", defaultValue: "", type: "text", required: false },
+  { key: "archived", defaultValue: "false", type: "boolean", required: false },
+  { key: "dateCreated", defaultValue: "{{date}}", type: "date", required: true },
+  { key: "dateModified", defaultValue: "{{date}}", type: "date", required: true }
 ];
 var DEFAULT_SETTINGS = {
   provider: "openai",
@@ -1532,10 +1552,10 @@ ${processedKey}: true
   }
   // Shared method for constructing prompts
   buildExtractionPrompt(sourcePath, content) {
-    const basePrompt = this.settings.customPrompt || DEFAULT_EXTRACTION_PROMPT.replace("{ownerName}", this.settings.ownerName);
+    const basePrompt = this.settings.customPrompt || DEFAULT_EXTRACTION_PROMPT.replace(/{ownerName}/g, this.settings.ownerName);
     const fieldDescriptions = this.settings.frontmatterFields.filter((f) => f.required || f.key === "task_title" || f.key === "task_details").map((f) => {
       var _a;
-      if (f.key === "task" || f.key === "task_title")
+      if (f.key === "task" || f.key === "task_title" || f.key === "title")
         return "- task_title: short (6-100 words) actionable title";
       if (f.key === "task_details")
         return "- task_details: 1-3 sentences describing what to do and any context";
@@ -1543,6 +1563,8 @@ ${processedKey}: true
         return "- due_date: ISO date YYYY-MM-DD if explicitly present in the text, otherwise null";
       if (f.key === "priority")
         return `- priority: ${((_a = f.options) == null ? void 0 : _a.join("|")) || "high|medium|low"} (choose best match)`;
+      if (f.key === "status")
+        return `- status: ${f.defaultValue}`;
       if (f.key === "project")
         return "- project: project name if mentioned, otherwise null";
       if (f.key === "client")
@@ -1849,7 +1871,7 @@ ${content}
     if (task.confidence && !["high", "medium", "low"].includes(task.confidence)) {
       return false;
     }
-    if (task.priority && !["high", "medium", "low"].includes(task.priority)) {
+    if (task.priority && !["high", "normal", "low", "medium", "urgent"].includes(task.priority)) {
       return false;
     }
     if (task.due_date && typeof task.due_date === "string") {
@@ -1953,37 +1975,99 @@ ${content}
    * Extract field value from extraction data with intelligent mapping
    */
   extractFieldValue(extraction, field) {
+    let value;
     if (extraction[field.key] !== void 0) {
-      return extraction[field.key];
-    }
-    const keyWithoutUnderscores = field.key.replace(/_/g, "");
-    if (extraction[keyWithoutUnderscores] !== void 0) {
-      return extraction[keyWithoutUnderscores];
-    }
-    const fieldMappings = {
-      "task": ["task_title", "title"],
-      "task_title": ["task_title", "title"],
-      "details": ["task_details", "description"],
-      "task_details": ["task_details", "description"],
-      "due": ["due_date", "dueDate"],
-      "due_date": ["due_date", "dueDate"],
-      "priority": ["priority"],
-      "project": ["project"],
-      "client": ["client"],
-      "excerpt": ["source_excerpt", "sourceExcerpt"],
-      "source_excerpt": ["source_excerpt", "sourceExcerpt"],
-      "confidence": ["confidence"]
-    };
-    const mappings = fieldMappings[field.key] || [];
-    for (const mapping of mappings) {
-      if (extraction[mapping] !== void 0) {
-        return extraction[mapping];
+      value = extraction[field.key];
+    } else {
+      const keyWithoutUnderscores = field.key.replace(/_/g, "");
+      if (extraction[keyWithoutUnderscores] !== void 0) {
+        value = extraction[keyWithoutUnderscores];
+      } else {
+        const fieldMappings = {
+          "task": ["task_title", "title"],
+          "task_title": ["task_title", "title"],
+          "title": ["task_title", "title"],
+          "details": ["task_details", "description"],
+          "task_details": ["task_details", "description"],
+          "due": ["due_date", "dueDate"],
+          "due_date": ["due_date", "dueDate"],
+          "scheduled": ["scheduled_date", "scheduledDate"],
+          "scheduled_date": ["scheduled_date", "scheduledDate"],
+          "priority": ["priority"],
+          "status": ["status"],
+          "project": ["project", "projects"],
+          "projects": ["projects", "project"],
+          "client": ["client", "contexts"],
+          "contexts": ["contexts", "client"],
+          "excerpt": ["source_excerpt", "sourceExcerpt"],
+          "source_excerpt": ["source_excerpt", "sourceExcerpt"],
+          "confidence": ["confidence"],
+          "archived": ["archived"]
+        };
+        const mappings = fieldMappings[field.key] || [];
+        for (const mapping of mappings) {
+          if (extraction[mapping] !== void 0) {
+            value = extraction[mapping];
+            break;
+          }
+        }
       }
     }
-    if (field.defaultValue === "{{date}}") {
+    if (value !== void 0) {
+      value = this.mapValueForTaskNotes(value, field.key);
+    }
+    if (value === void 0 && field.defaultValue === "{{date}}") {
       return new Date().toISOString().split("T")[0];
     }
-    return field.defaultValue || "";
+    return value !== void 0 ? value : field.defaultValue || "";
+  }
+  /**
+   * Map values to TaskNotes-compatible format
+   */
+  mapValueForTaskNotes(value, fieldKey) {
+    if (value === null || value === void 0) {
+      return value;
+    }
+    if (fieldKey === "priority" && typeof value === "string") {
+      const priorityMap = {
+        "urgent": "high",
+        "medium": "normal"
+      };
+      const lowerValue = value.toLowerCase();
+      return priorityMap[lowerValue] || value;
+    }
+    if (fieldKey === "status" && typeof value === "string") {
+      const statusMap = {
+        "inbox": "open",
+        "next": "open",
+        "waiting": "open",
+        "someday": "open",
+        "cancelled": "done",
+        "completed": "done"
+      };
+      const lowerValue = value.toLowerCase();
+      return statusMap[lowerValue] || value;
+    }
+    if ((fieldKey === "contexts" || fieldKey === "projects") && value) {
+      if (Array.isArray(value)) {
+        return value.filter((item) => item && typeof item === "string" && item.trim().length > 0);
+      } else if (typeof value === "string") {
+        const items = value.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
+        return items.length > 0 ? items : [];
+      }
+      return [];
+    }
+    if (fieldKey === "archived") {
+      if (typeof value === "boolean") {
+        return value;
+      }
+      if (typeof value === "string") {
+        const lowerValue = value.toLowerCase();
+        return lowerValue === "true" || lowerValue === "1" || lowerValue === "yes" || lowerValue === "on";
+      }
+      return false;
+    }
+    return value;
   }
   /**
    * Format field value according to its type with proper YAML formatting
@@ -1992,8 +2076,26 @@ ${content}
     if (value === null || value === void 0) {
       return null;
     }
+    if ((field.key === "contexts" || field.key === "projects") && Array.isArray(value)) {
+      if (value.length === 0) {
+        return "[]";
+      }
+      const formattedItems = value.map((item) => {
+        const itemStr = String(item).trim();
+        if (itemStr.includes(":") || itemStr.includes("#") || itemStr.includes("[") || itemStr.includes("]") || itemStr.includes("{") || itemStr.includes("}") || itemStr.includes("|") || itemStr.includes(">") || itemStr.includes("&") || itemStr.includes("*") || itemStr.includes("!") || itemStr.includes("%") || itemStr.includes("@") || itemStr.includes("`") || itemStr.includes('"') || itemStr.includes("'") || itemStr.includes("\\") || itemStr.includes("\n") || itemStr.includes("	") || /^\s/.test(itemStr) || /\s$/.test(itemStr) || itemStr.includes("  ")) {
+          return `"${itemStr.replace(/"/g, '\\"')}"`;
+        }
+        return itemStr;
+      });
+      return `[${formattedItems.join(", ")}]`;
+    }
     switch (field.type) {
       case "text":
+        if (Array.isArray(value)) {
+          if (value.length === 0)
+            return null;
+          return value.join(", ");
+        }
         const textValue = String(value).trim();
         if (!textValue)
           return null;
@@ -2034,7 +2136,7 @@ ${content}
         return selectValue;
       case "boolean":
         if (typeof value === "boolean") {
-          return value.toString();
+          return value ? "true" : "false";
         }
         const boolStr = String(value).trim().toLowerCase();
         if (boolStr === "true" || boolStr === "1" || boolStr === "yes" || boolStr === "on") {

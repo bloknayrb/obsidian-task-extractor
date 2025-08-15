@@ -443,16 +443,17 @@ export class TaskProcessor {
   private buildExtractionPrompt(sourcePath: string, content: string): { system: string, user: string } {
     // Use custom prompt if provided, otherwise use default prompt constant
     const basePrompt = this.settings.customPrompt || 
-      DEFAULT_EXTRACTION_PROMPT.replace('{ownerName}', this.settings.ownerName);
+      DEFAULT_EXTRACTION_PROMPT.replace(/{ownerName}/g, this.settings.ownerName);
     
     // Generate field descriptions from frontmatter settings
     const fieldDescriptions = this.settings.frontmatterFields
       .filter(f => f.required || f.key === 'task_title' || f.key === 'task_details')
       .map(f => {
-        if (f.key === 'task' || f.key === 'task_title') return '- task_title: short (6-100 words) actionable title';
+        if (f.key === 'task' || f.key === 'task_title' || f.key === 'title') return '- task_title: short (6-100 words) actionable title';
         if (f.key === 'task_details') return '- task_details: 1-3 sentences describing what to do and any context';
         if (f.key === 'due') return '- due_date: ISO date YYYY-MM-DD if explicitly present in the text, otherwise null';
         if (f.key === 'priority') return `- priority: ${f.options?.join('|') || 'high|medium|low'} (choose best match)`;
+        if (f.key === 'status') return `- status: ${f.defaultValue}`;
         if (f.key === 'project') return '- project: project name if mentioned, otherwise null';
         if (f.key === 'client') return '- client: client name if mentioned, otherwise null';
         return `- ${f.key}: ${f.defaultValue || 'appropriate value based on context'}`;
@@ -805,8 +806,8 @@ When no tasks found, return: {"found": false, "tasks": []}`;
       return false;
     }
     
-    // Validate priority if present
-    if (task.priority && !['high', 'medium', 'low'].includes(task.priority)) {
+    // Validate priority if present (TaskNotes-compatible values + legacy values for backward compatibility)
+    if (task.priority && !['high', 'normal', 'low', 'medium', 'urgent'].includes(task.priority)) {
       return false;
     }
     
@@ -947,47 +948,121 @@ When no tasks found, return: {"found": false, "tasks": []}`;
    * Extract field value from extraction data with intelligent mapping
    */
   private extractFieldValue(extraction: TaskExtraction | ExtractedTask, field: FrontmatterField): any {
+    let value: any;
+    
     // Direct key match (exact)
     if (extraction[field.key] !== undefined) {
-      return extraction[field.key];
-    }
-    
-    // Try key without underscores (e.g., task_title -> tasktitle)
-    const keyWithoutUnderscores = field.key.replace(/_/g, '');
-    if (extraction[keyWithoutUnderscores] !== undefined) {
-      return extraction[keyWithoutUnderscores];
-    }
-    
-    // Common field mappings for backward compatibility
-    const fieldMappings: Record<string, string[]> = {
-      'task': ['task_title', 'title'],
-      'task_title': ['task_title', 'title'],
-      'details': ['task_details', 'description'],
-      'task_details': ['task_details', 'description'],
-      'due': ['due_date', 'dueDate'],
-      'due_date': ['due_date', 'dueDate'],
-      'priority': ['priority'],
-      'project': ['project'],
-      'client': ['client'],
-      'excerpt': ['source_excerpt', 'sourceExcerpt'],
-      'source_excerpt': ['source_excerpt', 'sourceExcerpt'],
-      'confidence': ['confidence']
-    };
-    
-    const mappings = fieldMappings[field.key] || [];
-    for (const mapping of mappings) {
-      if (extraction[mapping] !== undefined) {
-        return extraction[mapping];
+      value = extraction[field.key];
+    } else {
+      // Try key without underscores (e.g., task_title -> tasktitle)
+      const keyWithoutUnderscores = field.key.replace(/_/g, '');
+      if (extraction[keyWithoutUnderscores] !== undefined) {
+        value = extraction[keyWithoutUnderscores];
+      } else {
+        // Common field mappings for backward compatibility
+        const fieldMappings: Record<string, string[]> = {
+          'task': ['task_title', 'title'],
+          'task_title': ['task_title', 'title'],
+          'title': ['task_title', 'title'],
+          'details': ['task_details', 'description'],
+          'task_details': ['task_details', 'description'],
+          'due': ['due_date', 'dueDate'],
+          'due_date': ['due_date', 'dueDate'],
+          'scheduled': ['scheduled_date', 'scheduledDate'],
+          'scheduled_date': ['scheduled_date', 'scheduledDate'],
+          'priority': ['priority'],
+          'status': ['status'],
+          'project': ['project', 'projects'],
+          'projects': ['projects', 'project'],
+          'client': ['client', 'contexts'],
+          'contexts': ['contexts', 'client'],
+          'excerpt': ['source_excerpt', 'sourceExcerpt'],
+          'source_excerpt': ['source_excerpt', 'sourceExcerpt'],
+          'confidence': ['confidence'],
+          'archived': ['archived']
+        };
+        
+        const mappings = fieldMappings[field.key] || [];
+        for (const mapping of mappings) {
+          if (extraction[mapping] !== undefined) {
+            value = extraction[mapping];
+            break;
+          }
+        }
       }
     }
     
+    // Apply TaskNotes-compatible value mapping
+    if (value !== undefined) {
+      value = this.mapValueForTaskNotes(value, field.key);
+    }
+    
     // Handle special template values
-    if (field.defaultValue === '{{date}}') {
+    if (value === undefined && field.defaultValue === '{{date}}') {
       return new Date().toISOString().split('T')[0];
     }
     
-    // Return default value if no extraction value found
-    return field.defaultValue || '';
+    // Return mapped value or default value if no extraction value found
+    return value !== undefined ? value : (field.defaultValue || '');
+  }
+
+  /**
+   * Map values to TaskNotes-compatible format
+   */
+  private mapValueForTaskNotes(value: any, fieldKey: string): any {
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    // Priority mapping: medium→normal, urgent→high
+    if (fieldKey === 'priority' && typeof value === 'string') {
+      const priorityMap: Record<string, string> = {
+        'urgent': 'high',
+        'medium': 'normal'
+      };
+      const lowerValue = value.toLowerCase();
+      return priorityMap[lowerValue] || value;
+    }
+    
+    // Status mapping: inbox→open, etc.
+    if (fieldKey === 'status' && typeof value === 'string') {
+      const statusMap: Record<string, string> = {
+        'inbox': 'open',
+        'next': 'open',
+        'waiting': 'open',
+        'someday': 'open',
+        'cancelled': 'done',
+        'completed': 'done'
+      };
+      const lowerValue = value.toLowerCase();
+      return statusMap[lowerValue] || value;
+    }
+    
+    // Handle array fields for contexts and projects
+    if ((fieldKey === 'contexts' || fieldKey === 'projects') && value) {
+      if (Array.isArray(value)) {
+        return value.filter(item => item && typeof item === 'string' && item.trim().length > 0);
+      } else if (typeof value === 'string') {
+        // Convert string to array, handling comma-separated values
+        const items = value.split(',').map(item => item.trim()).filter(item => item.length > 0);
+        return items.length > 0 ? items : [];
+      }
+      return [];
+    }
+    
+    // Handle boolean field for archived status
+    if (fieldKey === 'archived') {
+      if (typeof value === 'boolean') {
+        return value;
+      }
+      if (typeof value === 'string') {
+        const lowerValue = value.toLowerCase();
+        return lowerValue === 'true' || lowerValue === '1' || lowerValue === 'yes' || lowerValue === 'on';
+      }
+      return false;
+    }
+    
+    return value;
   }
 
   /**
@@ -998,8 +1073,38 @@ When no tasks found, return: {"found": false, "tasks": []}`;
       return null;
     }
     
+    // Handle array fields for contexts and projects (TaskNotes compatibility)
+    if ((field.key === 'contexts' || field.key === 'projects') && Array.isArray(value)) {
+      if (value.length === 0) {
+        return '[]';
+      }
+      // Format as YAML array
+      const formattedItems = value.map(item => {
+        const itemStr = String(item).trim();
+        // Quote items that contain special characters
+        if (itemStr.includes(':') || itemStr.includes('#') || itemStr.includes('[') || 
+            itemStr.includes(']') || itemStr.includes('{') || itemStr.includes('}') ||
+            itemStr.includes('|') || itemStr.includes('>') || itemStr.includes('&') ||
+            itemStr.includes('*') || itemStr.includes('!') || itemStr.includes('%') ||
+            itemStr.includes('@') || itemStr.includes('`') || itemStr.includes('"') ||
+            itemStr.includes("'") || itemStr.includes('\\') || itemStr.includes('\n') ||
+            itemStr.includes('\t') || /^\s/.test(itemStr) || /\s$/.test(itemStr) ||
+            itemStr.includes('  ')) {
+          return `"${itemStr.replace(/"/g, '\\"')}"`;
+        }
+        return itemStr;
+      });
+      return `[${formattedItems.join(', ')}]`;
+    }
+    
     switch (field.type) {
       case 'text':
+        // Handle array values that weren't caught above
+        if (Array.isArray(value)) {
+          if (value.length === 0) return null;
+          return value.join(', ');
+        }
+        
         const textValue = String(value).trim();
         if (!textValue) return null;
         
@@ -1060,7 +1165,7 @@ When no tasks found, return: {"found": false, "tasks": []}`;
         
       case 'boolean':
         if (typeof value === 'boolean') {
-          return value.toString();
+          return value ? 'true' : 'false';
         }
         
         const boolStr = String(value).trim().toLowerCase();

@@ -338,8 +338,8 @@ describe('TaskProcessor - Prompt Building Logic', () => {
       
       // Should include field descriptions from frontmatter settings in the JSON format section
       expect(result.system).toContain('- task_title: short (6-100 words) actionable title');
-      expect(result.system).toContain('- status: inbox');
-      expect(result.system).toContain('- priority: low|medium|high|urgent (choose best match)');
+      expect(result.system).toContain('- status: open');
+      expect(result.system).toContain('- priority: low|normal|high (choose best match)');
       expect(result.system).toContain('"source_excerpt": "exact quote from source (max 150 chars)"');
       expect(result.system).toContain('When tasks are found, return JSON in this format:');
     });
